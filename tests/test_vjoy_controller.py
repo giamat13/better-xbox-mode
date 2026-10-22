@@ -32,7 +32,11 @@ def _set_cursor(x, y):
     ctypes.WinDLL("user32").SetCursorPos(int(x), int(y))
 
 
-def _engine(backend):
+def _key_down(virtual_key):
+    return bool(ctypes.WinDLL("user32").GetAsyncKeyState(virtual_key) & 0x8000)
+
+
+def _engine(backend, toggle_osk=lambda: None):
     from xbox_mode.config import load_config
     from xbox_mode.engine import Engine
     from xbox_mode.launcher import Launcher
@@ -49,7 +53,7 @@ def _engine(backend):
         foreground=lambda: (None, "notepad.exe"),
         uses_gamepad=lambda pid, now: False,
         heartbeat=lambda: None,
-        toggle_osk=lambda: None,
+        toggle_osk=toggle_osk,
         launch_app=lambda app: None,
     )
 
@@ -69,6 +73,8 @@ class VJoyControllerTests(unittest.TestCase):
         vjoy.SetAxis.restype = ctypes.c_bool
         vjoy.SetBtn.argtypes = [ctypes.c_bool, ctypes.c_uint, ctypes.c_ubyte]
         vjoy.SetBtn.restype = ctypes.c_bool
+        vjoy.SetContPov.argtypes = [ctypes.c_uint32, ctypes.c_uint, ctypes.c_ubyte]
+        vjoy.SetContPov.restype = ctypes.c_bool
         cls.vjoy = vjoy
         if not vjoy.vJoyEnabled():
             raise AssertionError("vJoy driver is not enabled")
@@ -133,6 +139,81 @@ class VJoyControllerTests(unittest.TestCase):
             time.sleep(0.05)
         self.vjoy.SetBtn(False, DEVICE, 1)
         self.assertTrue(pressed, "vJoy button 1 should appear as A in the pygame state")
+
+
+    def test_vjoy_button_a_is_a_real_left_click_while_held(self):
+        from xbox_mode.backend_win import WinInputBackend
+
+        source = self._source_with_joystick()
+        engine = _engine(WinInputBackend())
+        self.vjoy.SetBtn(True, DEVICE, 1)
+        down_seen = False
+        now = time.monotonic()
+        for _ in range(40):
+            state = source.read()
+            if state is not None:
+                engine.step(state, now)
+            down_seen = down_seen or _key_down(0x01)
+            now += 1 / 120
+            time.sleep(1 / 120)
+        self.vjoy.SetBtn(False, DEVICE, 1)
+        for _ in range(10):
+            state = source.read()
+            if state is not None:
+                engine.step(state, now)
+            now += 1 / 120
+            time.sleep(1 / 120)
+        self.assertTrue(down_seen, "left mouse button should be down while vJoy button 1 is held")
+        self.assertFalse(_key_down(0x01), "left mouse button should be released after vJoy button 1 is let go")
+
+    def test_vjoy_button_y_opens_and_closes_the_real_on_screen_keyboard(self):
+        import subprocess
+
+        from xbox_mode.backend_win import WinInputBackend
+        from xbox_mode.system import osk_running, toggle_osk
+
+        self.addCleanup(lambda: subprocess.run(["taskkill", "/IM", "osk.exe", "/F"], capture_output=True))
+        source = self._source_with_joystick()
+        engine = _engine(WinInputBackend(), toggle_osk=toggle_osk)
+
+        def tap_y():
+            self.vjoy.SetBtn(True, DEVICE, 4)
+            now = time.monotonic()
+            for _ in range(30):
+                state = source.read()
+                if state is not None:
+                    engine.step(state, now)
+                now += 1 / 120
+                time.sleep(1 / 120)
+            self.vjoy.SetBtn(False, DEVICE, 4)
+            for _ in range(10):
+                state = source.read()
+                if state is not None:
+                    engine.step(state, now)
+                now += 1 / 120
+                time.sleep(1 / 120)
+
+        tap_y()
+        time.sleep(2)
+        opened = osk_running()
+        tap_y()
+        time.sleep(1)
+        self.assertTrue(opened, "vJoy button Y should open osk.exe")
+        self.assertFalse(osk_running(), "a second Y press should close osk.exe")
+
+    def test_vjoy_pov_hat_reaches_pygame_as_dpad_right(self):
+        source = self._source_with_joystick()
+        self.assertTrue(self.vjoy.SetContPov(9000, DEVICE, 1), "vJoy should accept a POV hat value")
+        dpad = None
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            state = source.read()
+            if state is not None and state.dpad == (1, 0):
+                dpad = state.dpad
+                break
+            time.sleep(0.05)
+        self.vjoy.SetContPov(0xFFFFFFFF, DEVICE, 1)
+        self.assertEqual(dpad, (1, 0), "POV right should appear as dpad (1, 0) in the pygame state")
 
 
 if __name__ == "__main__":
