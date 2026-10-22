@@ -116,8 +116,9 @@ class WindowsLiveTests(unittest.TestCase):
             self.assertTrue(uses_gamepad_api(list_modules(xinput.pid)))
             self.assertFalse(uses_gamepad_api(list_modules(plain.pid)))
         finally:
-            xinput.kill()
-            plain.kill()
+            for child in (xinput, plain):
+                child.kill()
+                child.wait()
 
     def test_start_menu_discovery_finds_apps(self):
         from xbox_mode.launcher_apps import discover_apps

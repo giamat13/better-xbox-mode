@@ -121,4 +121,13 @@ def toggle_osk() -> None:
     if osk_running():
         subprocess.run(["taskkill", "/IM", "osk.exe", "/F"], capture_output=True, check=False)
     else:
+        _start_osk()
+
+
+def _start_osk() -> None:
+    try:
         subprocess.Popen(["osk.exe"])
+    except OSError:
+        # Some Windows images refuse CreateProcess for osk.exe (WinError 740, elevation manifest).
+        # ShellExecute goes through the shell and is accepted in that case.
+        os.startfile("osk.exe")  # type: ignore[attr-defined]  # Windows only
