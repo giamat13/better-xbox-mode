@@ -1,8 +1,6 @@
 name: Windows virtual controller
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
