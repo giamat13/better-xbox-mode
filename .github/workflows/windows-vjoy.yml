@@ -15,8 +15,8 @@ jobs:
       - name: Download vJoy installer
         shell: pwsh
         run: |
-          # Direct SourceForge link for the 2.1.9.1 installer. The 'latest' link returns an HTML page instead.
-          Invoke-WebRequest -Uri 'https://sourceforge.net/projects/vjoystick/files/Beta%202.x/2.1.9.1-160719/vJoySetup.exe/download' -OutFile vJoySetup.exe -MaximumRedirection 10
+          # Direct mirror link for the 2.1.9.1 installer. PowerShell gets an HTML interstitial page from the other link.
+          curl.exe -sSL -o vJoySetup.exe 'https://downloads.sourceforge.net/project/vjoystick/Beta%202.x/2.1.9.1-160719/vJoySetup.exe'
           $size = (Get-Item vJoySetup.exe).Length
           Write-Output "installer bytes: $size"
           if ($size -lt 1000000) { Write-Output 'installer download is too small'; exit 1 }
