@@ -35,6 +35,16 @@ class VirtualControllerTests(unittest.TestCase):
             self.skipTest("vgamepad is not installed")
         self.vg = vgamepad
 
+    def _create_pad(self, attempts=20):
+        # vgamepad checks that the new target is attached right after adding it, and the bus can take a
+        # moment to attach the target, so creation is retried for a short while.
+        for _ in range(attempts):
+            try:
+                return self.vg.VX360Gamepad()
+            except AssertionError:
+                time.sleep(0.5)
+        self.fail("the virtual pad never attached to ViGEmBus")
+
     def _read_until_connected(self, source, pad, timeout=15.0):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -55,7 +65,7 @@ class VirtualControllerTests(unittest.TestCase):
         from xbox_mode.pygame_source import PygameSource
 
         config = load_config(None)
-        pad = self.vg.VX360Gamepad()
+        pad = self._create_pad()
         self.addCleanup(lambda: pad.reset() or pad.update())
         source = PygameSource(config)
         self.assertIsNotNone(self._read_until_connected(source, pad), "pygame never saw the virtual pad")
@@ -100,7 +110,7 @@ class VirtualControllerTests(unittest.TestCase):
         from xbox_mode.pygame_source import PygameSource
 
         config = load_config(None)
-        pad = self.vg.VX360Gamepad()
+        pad = self._create_pad()
         self.addCleanup(lambda: pad.reset() or pad.update())
         source = PygameSource(config)
         self.assertIsNotNone(self._read_until_connected(source, pad))
