@@ -45,3 +45,12 @@ class XTestBackend:
         event = X.KeyPress if down else X.KeyRelease
         xtest.fake_input(self._display, event, keycode)
         self._display.sync()
+
+    def text(self, value: str) -> None:
+        for char in value:
+            keycode = self._display.keysym_to_keycode(XK.string_to_keysym(char))
+            if not keycode:
+                continue
+            xtest.fake_input(self._display, X.KeyPress, keycode)
+            xtest.fake_input(self._display, X.KeyRelease, keycode)
+        self._display.sync()

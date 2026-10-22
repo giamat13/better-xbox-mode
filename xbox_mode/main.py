@@ -11,10 +11,14 @@ from .engine import Engine
 from .gamepad_usage import GamepadUsageCache
 from .heartbeat import HeartbeatServer, HeartbeatStore
 from .launcher import Launcher
+from .keyboard_model import OnScreenKeyboard
 from .launcher_apps import discover_apps, launch
 from .outputs import KeyboardOutput, MouseOutput
 from .policy import EmulationPolicy
-from .system import foreground_process, list_modules, toggle_osk
+from .system import foreground_process, list_modules
+from .switcher import TaskSwitcher
+from .taskbar import Taskbar
+from .windows_list import bring_to_front, close_window, list_windows
 
 log = logging.getLogger("xbox_mode")
 
@@ -33,8 +37,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="xbox_mode")
     parser.add_argument("--config", type=Path, default=Path("config.json"))
     parser.add_argument("--list-apps", action="store_true", help="print discovered apps and exit")
+    parser.add_argument("--show-taskbar", action="store_true", help="show the taskbar again and exit")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if args.show_taskbar:
+        from .taskbar import show_all_taskbars
+
+        show_all_taskbars()
+        return 0
 
     config = load_config(args.config)
     apps = discover_apps(config["extra_apps"])
@@ -47,10 +57,15 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     source = PygameSource(config)
     backend = _input_backend()
+    taskbar = Taskbar()
+    if config["hide_taskbar"]:
+        taskbar.hide()
     store = HeartbeatStore()
     server = HeartbeatServer(config["heartbeat_port"], store)
     server.start()
     usage = GamepadUsageCache(list_modules, include_dinput=config["detect_dinput"])
+    on_screen = OnScreenKeyboard()
+    switcher = TaskSwitcher(provider=list_windows, activate=bring_to_front, close=close_window)
     engine = Engine(
         config=config,
         mouse=MouseOutput(backend),
@@ -60,13 +75,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         foreground=foreground_process,
         uses_gamepad=usage.check,
         heartbeat=store.latest,
-        toggle_osk=toggle_osk,
+        toggle_osk=on_screen.toggle,
         launch_app=launch,
+        on_screen=on_screen,
+        type_text=backend.text,
+        switcher=switcher,
     )
 
-    from .launcher_ui import LauncherWindow
+    from .overlay import Overlay
 
-    window = LauncherWindow()
+    overlay = Overlay()
     tick = 1.0 / config["tick_rate"]
     log.info("Xbox mode running with %d apps, heartbeat on 127.0.0.1:%d", len(apps), server.port)
     try:
@@ -78,7 +96,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     engine.release_all()
                 else:
                     engine.step(pad, started)
-                window.sync(engine.launcher)
+                overlay.sync(engine.launcher, on_screen, switcher)
             except Exception:
                 log.exception("tick failed")
             time.sleep(max(0.0, tick - (time.monotonic() - started)))
@@ -86,6 +104,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         pass
     finally:
         engine.release_all()
-        window.close()
+        overlay.close()
         server.stop()
+        taskbar.restore()
     return 0

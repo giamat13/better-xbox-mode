@@ -143,16 +143,50 @@ class WindowsLiveTests(unittest.TestCase):
         subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], capture_output=True)
         self.assertTrue(running)
 
-    def test_on_screen_keyboard_opens_and_closes(self):
-        from xbox_mode.system import osk_running, toggle_osk
+    def test_unicode_text_reaches_a_focused_text_field(self):
+        import tkinter as tk
 
-        toggle_osk()
-        time.sleep(2)
-        opened = osk_running()
-        toggle_osk()
-        time.sleep(1)
-        self.assertTrue(opened)
-        self.assertFalse(osk_running())
+        root = tk.Tk()
+        self.addCleanup(root.destroy)
+        entry = tk.Entry(root, font=("Segoe UI", 16))
+        entry.pack()
+        root.deiconify()
+        entry.focus_force()
+        self._pump(root, 1.0)
+        self.backend.text("שלום abc")
+        self._pump(root, 1.0)
+        self.assertEqual(entry.get(), "שלום abc")
+
+    def test_on_screen_keyboard_does_not_take_focus_from_the_app_underneath(self):
+        import tkinter as tk
+
+        from xbox_mode.keyboard_model import OnScreenKeyboard
+        from xbox_mode.overlay import Overlay
+
+        root = tk.Tk()
+        self.addCleanup(root.destroy)
+        entry = tk.Entry(root, font=("Segoe UI", 16))
+        entry.pack()
+        root.deiconify()
+        entry.focus_force()
+        self._pump(root, 1.0)
+        user32 = ctypes.WinDLL("user32")
+        before = user32.GetForegroundWindow()
+
+        overlay = Overlay()
+        keyboard = OnScreenKeyboard()
+        keyboard.toggle()
+        overlay.sync(launcher=_EmptyLauncher(), on_screen=keyboard)
+        self._pump(root, 1.0)
+        self.assertTrue(overlay._keyboard_view._shown)
+        self.assertEqual(user32.GetForegroundWindow(), before)
+        overlay.close()
+
+    def _pump(self, root, seconds):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            root.update()
+            time.sleep(0.05)
 
     def test_engine_moves_the_real_cursor_right_with_the_stick(self):
         from xbox_mode.controller import ControllerState
@@ -168,25 +202,60 @@ class WindowsLiveTests(unittest.TestCase):
         self.assertGreater(after[0] - before[0], 20)
 
     def test_pygame_source_without_a_controller_reads_none(self):
+        import pygame
+
         from xbox_mode.config import load_config
         from xbox_mode.pygame_source import PygameSource
 
+        pygame.init()
+        pygame.joystick.init()
+        if pygame.joystick.get_count():
+            self.skipTest("a controller is connected, so the source is expected to read it")
         self.assertIsNone(PygameSource(load_config(None)).read())
 
-    def test_launcher_window_shows_and_hides(self):
+    def test_overlay_shows_and_hides_the_launcher(self):
+        from xbox_mode.keyboard_model import OnScreenKeyboard
         from xbox_mode.launcher import Launcher
         from xbox_mode.launcher_apps import App
-        from xbox_mode.launcher_ui import LauncherWindow
+        from xbox_mode.overlay import Overlay
 
-        window = LauncherWindow()
+        overlay = Overlay()
+        keyboard = OnScreenKeyboard()
         launcher = Launcher([App("Notepad", path="a"), App("Calc", path="b")], columns=2)
         launcher.toggle()
-        window.sync(launcher)
-        self.assertTrue(window._visible)
+        overlay.sync(launcher, keyboard)
+        self.assertTrue(overlay._launcher_view._visible)
         launcher.close()
-        window.sync(launcher)
-        self.assertFalse(window._visible)
-        window.close()
+        overlay.sync(launcher, keyboard)
+        self.assertFalse(overlay._launcher_view._visible)
+        overlay.close()
+
+    def test_taskbar_hides_and_comes_back(self):
+        from xbox_mode.taskbar import Taskbar, taskbar_handles, _user32
+
+        user32 = _user32()
+        handles = taskbar_handles()
+        self.assertTrue(handles, "the taskbar window should be found")
+        taskbar = Taskbar()
+        self.addCleanup(taskbar.restore)
+        taskbar.hide()
+        time.sleep(0.5)
+        self.assertFalse(any(user32.IsWindowVisible(hwnd) for hwnd in handles))
+        taskbar.restore()
+        time.sleep(0.5)
+        self.assertTrue(all(user32.IsWindowVisible(hwnd) for hwnd in handles))
+
+    def test_open_windows_are_listed(self):
+        from xbox_mode.windows_list import list_windows
+
+        self.assertTrue(list_windows(), "at least one app window should be open on the desktop")
+
+
+class _EmptyLauncher:
+    open = False
+
+    def tiles(self):
+        return ()
 
 
 if __name__ == "__main__":

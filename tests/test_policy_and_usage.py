@@ -1,7 +1,7 @@
 import unittest
 
 from xbox_mode.gamepad_usage import GamepadUsageCache, uses_gamepad_api
-from xbox_mode.policy import HANDLING, NATIVE, EmulationPolicy, PageReport
+from xbox_mode.policy import HANDLING, NATIVE, RELEASED, EmulationPolicy, PageReport
 
 
 class UsesGamepadApiTests(unittest.TestCase):
@@ -71,6 +71,10 @@ class EmulationPolicyTests(unittest.TestCase):
 
     def test_missing_chrome_report_falls_back_to_emulation(self):
         self.assertTrue(self.policy.decide("msedge.exe", False, None, now=0.0))
+
+    def test_chrome_handed_back_to_desktop_is_emulated(self):
+        report = PageReport(RELEASED, received_at=10.0)
+        self.assertTrue(self.policy.decide("chrome.exe", False, report, now=10.5))
 
     def test_exe_name_is_case_insensitive(self):
         self.assertFalse(self.policy.decide("Chrome.EXE", False, PageReport(NATIVE, 0.0), now=0.1))

@@ -16,6 +16,7 @@ MOUSEEVENTF_WHEEL = 0x0800
 KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_SCANCODE = 0x0008
+KEYEVENTF_UNICODE = 0x0004
 
 BUTTON_FLAGS = {
     "left": (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
@@ -80,6 +81,14 @@ def _mouse_input(flags: int, dx: int = 0, dy: int = 0, data: int = 0) -> INPUT:
     return item
 
 
+def _unicode_input(code: int, down: bool) -> INPUT:
+    item = INPUT()
+    item.type = INPUT_KEYBOARD
+    flags = KEYEVENTF_UNICODE | (0 if down else KEYEVENTF_KEYUP)
+    item.ki = KEYBDINPUT(0, code, flags, 0, 0)
+    return item
+
+
 def _key_input(name: str, down: bool) -> INPUT:
     scan, extended = SCANCODES[name]
     flags = KEYEVENTF_SCANCODE
@@ -117,3 +126,9 @@ class WinInputBackend:
 
     def key(self, name: str, down: bool) -> None:
         self._send(_key_input(name, down))
+
+    def text(self, value: str) -> None:
+        """Type exact characters, independent of the active keyboard layout."""
+        for char in value:
+            code = ord(char)
+            self._send(_unicode_input(code, down=True), _unicode_input(code, down=False))

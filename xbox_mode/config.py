@@ -15,6 +15,7 @@ DEFAULTS: Dict[str, Any] = {
     "heartbeat_port": 8765,
     "heartbeat_stale_seconds": 1.0,
     "detect_dinput": False,
+    "hide_taskbar": True,
     "overrides": {},
     "bindings": {},
     "extra_apps": [],
@@ -50,6 +51,8 @@ def validate(config: Dict[str, Any]) -> Dict[str, Any]:
     _number(config, "heartbeat_stale_seconds", 0.1, 10.0)
     if not isinstance(config["detect_dinput"], bool):
         raise ValueError("detect_dinput must be true or false")
+    if not isinstance(config["hide_taskbar"], bool):
+        raise ValueError("hide_taskbar must be true or false")
     for exe, mode in config["overrides"].items():
         if mode not in OVERRIDE_VALUES:
             raise ValueError(f"overrides[{exe!r}] must be one of {OVERRIDE_VALUES}")

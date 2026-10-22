@@ -33,6 +33,12 @@ class VirtualControllerTests(unittest.TestCase):
             import vgamepad
         except ImportError:
             self.skipTest("vgamepad is not installed")
+        import pygame
+
+        pygame.init()
+        pygame.joystick.init()
+        if pygame.joystick.get_count():
+            self.skipTest("disconnect physical controllers: the source reads joystick 0")
         self.vg = vgamepad
 
     def _create_pad(self, attempts=20):

@@ -10,6 +10,7 @@
   "heartbeat_port": 8765,
   "heartbeat_stale_seconds": 1.0,
   "detect_dinput": false,
+  "hide_taskbar": true,
   "overrides": {},
   "bindings": {},
   "extra_apps": [],

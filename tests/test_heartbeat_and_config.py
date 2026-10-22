@@ -7,7 +7,7 @@ from pathlib import Path
 
 from xbox_mode.config import load_config
 from xbox_mode.heartbeat import HeartbeatServer, HeartbeatStore
-from xbox_mode.policy import HANDLING, NATIVE
+from xbox_mode.policy import HANDLING, NATIVE, RELEASED
 
 
 class FakeClock:
@@ -58,6 +58,10 @@ class HeartbeatServerTests(unittest.TestCase):
     def test_native_state_is_recorded(self):
         self.post("/heartbeat", {"state": NATIVE})
         self.assertEqual(self.store.latest().state, NATIVE)
+
+    def test_released_state_is_recorded(self):
+        self.post("/heartbeat", {"state": RELEASED})
+        self.assertEqual(self.store.latest().state, RELEASED)
 
     def test_unknown_state_is_rejected(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:

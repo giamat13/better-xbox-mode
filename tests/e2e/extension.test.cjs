@@ -2,7 +2,8 @@
 // a fake gamepad injected into the page, and (for the heartbeat test) the real desktop heartbeat server.
 //
 // Run from the repository root:
-//   NODE_PATH=/opt/node22/lib/node_modules node --test tests/e2e/extension.test.cjs
+//   npm install --no-save playwright@1.56.1 && npx playwright install chromium
+//   node --test tests/e2e/extension.test.cjs
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -18,7 +19,7 @@ const CHROME = process.env.CHROME_PATH || chromium.executablePath();
 const PYTHON = process.env.PYTHON || 'python3';
 const HEARTBEAT_PORT = 8765;
 
-const BUTTON = { A: 0, Y: 3 };
+const BUTTON = { A: 0, Y: 3, LB: 4, RB: 5 };
 const FAKE_PAD_SCRIPT = `(() => {
   const realGetGamepads = Navigator.prototype.getGamepads;
   const pad = {
@@ -34,6 +35,22 @@ const FAKE_PAD_SCRIPT = `(() => {
 })();`;
 
 const PAGES = {
+  '/dashboard.html': `<!doctype html><html><body style="margin:0">
+    <nav id="session-list">
+      <div class="session-item" data-id="a" aria-current="true">first</div>
+      <div class="session-item" data-id="b" aria-current="false">second</div>
+      <div class="session-item" data-id="c" aria-current="false">third</div>
+    </nav>
+    <script>
+      window.selected = [];
+      for (const item of document.querySelectorAll('.session-item')) {
+        item.addEventListener('click', () => {
+          window.selected.push(item.dataset.id);
+          for (const other of document.querySelectorAll('.session-item'))
+            other.setAttribute('aria-current', String(other === item));
+        });
+      }
+    </script></body></html>`,
   '/click.html': `<!doctype html><html><body style="margin:0">
     <button id="target" style="position:absolute;left:100px;top:100px;width:200px;height:80px">target</button>
     <script>
@@ -280,6 +297,40 @@ test('Y opens the on-screen keyboard and keys type into the focused field', asyn
     return !!osk && osk.style.display !== 'none';
   });
   assert.equal(oskVisible, false, 'second Y press should close the keyboard');
+  await page.close();
+});
+
+test('pushing the stick past the top edge hands the mouse to the desktop app', async () => {
+  const page = await openPage('/click.html', { activate: true });
+  await setAxes(page, [0, -1, 0, 0]);
+  await page.waitForTimeout(1500);
+  await setAxes(page, [0, 0, 0, 0]);
+  assert.equal(await cursorPosition(page), null, 'cursor should hide once it is pushed off the page');
+  await tap(page, BUTTON.A);
+  await frames(page, 3);
+  assert.ok(await cursorPosition(page), 'a button press should bring the page cursor back');
+  await page.close();
+});
+
+test('LB and RB move between sessions on the session dashboard without the cursor', async () => {
+  const page = await openPage('/dashboard.html');
+  await tap(page, BUTTON.RB);
+  await frames(page, 2);
+  await tap(page, BUTTON.RB);
+  await frames(page, 2);
+  assert.deepEqual(await page.evaluate(() => window.selected), ['b', 'c']);
+  await tap(page, BUTTON.LB);
+  await frames(page, 2);
+  assert.deepEqual(await page.evaluate(() => window.selected), ['b', 'c', 'b']);
+  assert.equal(await cursorPosition(page), null, 'session switching must not show the cursor');
+  await page.close();
+});
+
+test('LB activates the cursor on a page without a session list', async () => {
+  const page = await openPage('/click.html');
+  await tap(page, BUTTON.LB);
+  await frames(page, 3);
+  assert.ok(await cursorPosition(page), 'LB should act as the first press on ordinary pages');
   await page.close();
 });
 

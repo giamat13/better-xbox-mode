@@ -5,10 +5,11 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Optional
 
-from .policy import HANDLING, NATIVE, PageReport
+from .policy import HANDLING, NATIVE, RELEASED, PageReport
 
-ALLOWED_STATES = (HANDLING, NATIVE)
+ALLOWED_STATES = (HANDLING, NATIVE, RELEASED)
 MAX_BODY_BYTES = 4096
+MAX_DRAIN_BYTES = 65536
 
 
 class HeartbeatStore:
@@ -68,6 +69,7 @@ def _handler_for(store: HeartbeatStore) -> type:
                 return
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_BODY_BYTES:
+                self.rfile.read(min(length, MAX_DRAIN_BYTES))
                 self._respond(413)
                 return
             try:

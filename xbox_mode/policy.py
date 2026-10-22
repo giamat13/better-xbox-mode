@@ -5,6 +5,7 @@ from typing import Dict, Optional
 BROWSERS = frozenset({"chrome.exe", "msedge.exe", "brave.exe"})
 HANDLING = "handling"  # the Chrome extension emulates input on this page
 NATIVE = "native"  # the page reads the gamepad itself, so nothing is emulated
+RELEASED = "released"  # the cursor was pushed off the page, so the desktop app moves the real mouse
 
 
 @dataclass(frozen=True)

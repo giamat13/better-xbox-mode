@@ -104,30 +104,3 @@ def _linux_modules(pid: int) -> List[str]:
     return sorted(names)
 
 
-def osk_running() -> bool:
-    if sys.platform != "win32":
-        return False
-    result = subprocess.run(
-        ["tasklist", "/FI", "IMAGENAME eq osk.exe", "/NH"], capture_output=True, text=True, check=False
-    )
-    return "osk.exe" in result.stdout.lower()
-
-
-def toggle_osk() -> None:
-    """Open the Windows On-Screen Keyboard, or close it if it is already open."""
-    if sys.platform != "win32":
-        log.info("on-screen keyboard is only available on Windows")
-        return
-    if osk_running():
-        subprocess.run(["taskkill", "/IM", "osk.exe", "/F"], capture_output=True, check=False)
-    else:
-        _start_osk()
-
-
-def _start_osk() -> None:
-    try:
-        subprocess.Popen(["osk.exe"])
-    except OSError:
-        # Some Windows images refuse CreateProcess for osk.exe (WinError 740, elevation manifest).
-        # ShellExecute goes through the shell and is accepted in that case.
-        os.startfile("osk.exe")  # type: ignore[attr-defined]  # Windows only

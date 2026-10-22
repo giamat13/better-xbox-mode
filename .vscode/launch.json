@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Xbox Mode (F5)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "C:\\Users\\furst\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+      "module": "xbox_mode",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

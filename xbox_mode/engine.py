@@ -5,10 +5,12 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from .bindings import DEFAULT_BINDINGS, DPAD_KEYS, TOGGLE_CHORD
 from .controller import ControllerState
 from .launcher import Launcher
+from .keyboard_model import Key, OnScreenKeyboard
 from .launcher_apps import App
 from .mapping import ButtonEdges, ChordTimer, shape_stick
 from .outputs import DpadRepeater, KeyboardOutput, KEY_NAMES, MOUSE_BUTTONS, MouseOutput
 from .policy import EmulationPolicy, PageReport
+from .switcher import TaskSwitcher
 
 log = logging.getLogger(__name__)
 
@@ -40,9 +42,15 @@ class Engine:
         heartbeat: Callable[[], Optional[PageReport]],
         toggle_osk: Callable[[], None],
         launch_app: Callable[[App], None],
+        on_screen: Optional[OnScreenKeyboard] = None,
+        type_text: Optional[Callable[[str], None]] = None,
+        switcher: Optional[TaskSwitcher] = None,
     ) -> None:
         self.enabled = True
         self.launcher = launcher
+        self._on_screen = on_screen
+        self._switcher = switcher
+        self._type_text = type_text or (lambda value: None)
         self._deadzone = config["deadzone"]
         self._exponent = config["stick_exponent"]
         self._mouse_speed = config["mouse_speed"]
@@ -83,6 +91,15 @@ class Engine:
         if self.launcher.open:
             self._launcher_step(pad, pressed, now)
             return
+        if self._on_screen is not None and self._on_screen.open:
+            self._keyboard_step(pad, pressed, now)
+            return
+        if self._switcher is not None and self._switcher.open:
+            self._switcher_step(pad, pressed, now)
+            return
+        if self._switcher is not None and "BACK" in pressed:
+            self._switcher.toggle()
+            return
         if not self.enabled or not self._may_emulate(now):
             self.release_all()
             return
@@ -106,6 +123,46 @@ class Engine:
                 self._launch_app(app)
         if "B" in pressed:
             self.launcher.close()
+
+    def _keyboard_step(self, pad: ControllerState, pressed: frozenset, now: float) -> None:
+        """While the on-screen keyboard is open, the D-pad moves its selection and the buttons type."""
+        self.release_all()
+        for dx, dy in self._repeat.update(pad.dpad, now):
+            self._on_screen.move(dx, dy)
+        if "A" in pressed:
+            key = self._on_screen.press()
+            if key is not None:
+                self._type_key(key)
+        if "X" in pressed:
+            self._keyboard.tap("backspace")
+        if "START" in pressed:
+            self._keyboard.tap("enter")
+        if "B" in pressed or "Y" in pressed:
+            self._on_screen.close()
+
+    def _switcher_step(self, pad: ControllerState, pressed: frozenset, now: float) -> None:
+        """Task switcher: D-pad or LB/RB pick a window, A switches to it, X closes it, B or BACK leaves."""
+        self.release_all()
+        for dx, _ in self._repeat.update(pad.dpad, now):
+            self._switcher.move(dx)
+        if "LB" in pressed:
+            self._switcher.move(-1)
+        if "RB" in pressed:
+            self._switcher.move(1)
+        if "A" in pressed:
+            self._switcher.activate()
+        if "X" in pressed:
+            self._switcher.close_selected()
+        if "B" in pressed or "BACK" in pressed:
+            self._switcher.close()
+
+    def _type_key(self, key: Key) -> None:
+        if key.action in ("text", "space"):
+            self._type_text(key.value)
+        elif key.action == "backspace":
+            self._keyboard.tap("backspace")
+        elif key.action == "enter":
+            self._keyboard.tap("enter")
 
     def _emulate(
         self,
