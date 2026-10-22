@@ -1,0 +1,22 @@
+{
+  "deadzone": 0.12,
+  "stick_exponent": 2.0,
+  "mouse_speed": 1400.0,
+  "scroll_speed": 12.0,
+  "dpad_repeat_delay": 0.4,
+  "dpad_repeat_interval": 0.08,
+  "tick_rate": 120,
+  "toggle_hold_seconds": 1.0,
+  "heartbeat_port": 8765,
+  "heartbeat_stale_seconds": 1.0,
+  "detect_dinput": false,
+  "overrides": {},
+  "bindings": {},
+  "extra_apps": [],
+  "joystick_buttons": {
+    "A": 0, "B": 1, "X": 2, "Y": 3, "LB": 4, "RB": 5,
+    "BACK": 6, "START": 7, "GUIDE": 8, "LS": 9, "RS": 10
+  },
+  "joystick_axes": {"left_x": 0, "left_y": 1, "right_x": 2, "right_y": 3, "lt": 4, "rt": 5},
+  "joystick_hat": 0
+}
