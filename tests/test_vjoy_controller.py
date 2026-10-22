@@ -73,8 +73,8 @@ class VJoyControllerTests(unittest.TestCase):
         vjoy.SetAxis.restype = ctypes.c_bool
         vjoy.SetBtn.argtypes = [ctypes.c_bool, ctypes.c_uint, ctypes.c_ubyte]
         vjoy.SetBtn.restype = ctypes.c_bool
-        vjoy.SetContPov.argtypes = [ctypes.c_uint32, ctypes.c_uint, ctypes.c_ubyte]
-        vjoy.SetContPov.restype = ctypes.c_bool
+        vjoy.SetDiscPov.argtypes = [ctypes.c_int, ctypes.c_uint, ctypes.c_ubyte]
+        vjoy.SetDiscPov.restype = ctypes.c_bool
         cls.vjoy = vjoy
         if not vjoy.vJoyEnabled():
             raise AssertionError("vJoy driver is not enabled")
@@ -202,19 +202,25 @@ class VJoyControllerTests(unittest.TestCase):
         self.assertFalse(osk_running(), "a second Y press should close osk.exe")
 
     def test_vjoy_pov_hat_reaches_pygame_as_dpad_right(self):
+        # A discrete POV (0 north, 1 east, 2 south, 3 west, -1 centred) is what SDL reads as a hat.
+        import pygame
+
         source = self._source_with_joystick()
-        self.assertTrue(self.vjoy.SetContPov(9000, DEVICE, 1), "vJoy should accept a POV hat value")
+        self.assertTrue(self.vjoy.SetDiscPov(1, DEVICE, 1), "vJoy should accept a discrete POV value")
         dpad = None
+        seen = None
         deadline = time.monotonic() + 2.0
         while time.monotonic() < deadline:
             state = source.read()
-            if state is not None and state.dpad == (1, 0):
-                dpad = state.dpad
-                break
+            if state is not None:
+                seen = state.dpad
+                if state.dpad == (1, 0):
+                    dpad = state.dpad
+                    break
             time.sleep(0.05)
-        self.vjoy.SetContPov(0xFFFFFFFF, DEVICE, 1)
-        self.assertEqual(dpad, (1, 0), "POV right should appear as dpad (1, 0) in the pygame state")
-
+        hats = pygame.joystick.Joystick(0).get_numhats()
+        self.vjoy.SetDiscPov(-1, DEVICE, 1)
+        self.assertEqual(dpad, (1, 0), f"POV east should appear as dpad (1, 0); hats={hats}, last dpad={seen}")
 
 if __name__ == "__main__":
     unittest.main()
