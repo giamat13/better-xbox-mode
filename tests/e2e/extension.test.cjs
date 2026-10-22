@@ -14,7 +14,8 @@ const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const EXTENSION_DIR = path.join(ROOT, 'extension');
-const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = process.env.CHROME_PATH || chromium.executablePath();
+const PYTHON = process.env.PYTHON || 'python3';
 const HEARTBEAT_PORT = 8765;
 
 const BUTTON = { A: 0, Y: 3 };
@@ -306,7 +307,7 @@ test('a page that only polls getGamepads in its own loop is also passive', async
 
 test('heartbeat reaches the desktop app and reports handling or native', async () => {
   const app = spawn(
-    'python3',
+    PYTHON,
     [
       '-c',
       `import time; from xbox_mode.heartbeat import HeartbeatStore, HeartbeatServer;` +
