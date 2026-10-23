@@ -23,6 +23,8 @@ from .xinput import Pad
 
 TICK = 1 / 125
 WATCH_SECONDS = 45
+STEAM_GUARD_SECONDS = 3  # after Guide, how long Steam's own Big Picture window is pushed back
+STEAM_EXES = {"steam.exe", "steamwebhelper.exe"}
 WINDOWLESS_AFTER = 2  # launches in a row that showed no window before an app is hidden
 D3D_EXCLUSIVE = 3  # QUNS_RUNNING_D3D_FULL_SCREEN
 shell32 = ctypes.windll.shell32
@@ -43,6 +45,8 @@ class Engine:
         self.next_watch = 0.0
         self.exclusive = False
         self.next_exclusive_check = 0.0
+        self.guard_until = 0.0
+        self.next_guard = 0.0
 
     # ---- io ------------------------------------------------------------
     def emit(self, obj):
@@ -138,6 +142,13 @@ class Engine:
         appmod.save_config(self.cfg)
         threading.Thread(target=winsound.Beep, args=(440 if match else 880, 140), daemon=True).start()
 
+    def reclaim_from_steam(self, fg):
+        """Steam listens to the Guide button too and opens Big Picture over us; close it and take the screen back."""
+        if (fg and fg != self.ui_hwnd and winman.exe_name(fg).lower() in STEAM_EXES
+                and "big picture" in winman.title(fg).lower()):
+            winman.close(fg)
+            winman.focus(self.ui_hwnd)
+
     def watch_launch(self, now):
         """Watches a freshly launched app: makes its new windows full screen and learns whether it shows any window."""
         watch = self.launch
@@ -179,7 +190,12 @@ class Engine:
             self.watch_launch(now)
 
         chord = ("back" in pad.pressed and "start" in pad.held) or ("start" in pad.pressed and "back" in pad.held)
+        if now < self.guard_until and now >= self.next_guard:
+            self.next_guard = now + 0.1
+            self.reclaim_from_steam(fg)
+
         if "guide" in pad.pressed:
+            self.guard_until = now + STEAM_GUARD_SECONDS
             self.emit({"t": "guide"})
         elif in_ui or self.kb_visible:
             target = "kb" if self.kb_visible else "ui"

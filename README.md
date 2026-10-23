@@ -75,6 +75,13 @@ Dev fallback in the UI window: arrow keys, Enter (A), Esc (B), X, Y, Q/E (LB/RB)
 
 Settings live in `%APPDATA%\xbox_mode\config.json` and can be changed from the Settings tab.
 
+## Steam and the Guide button
+
+Steam also listens to the Guide button and may open its own Big Picture window over the switcher. For three seconds
+after each Guide press the engine closes a Steam Big Picture window that takes the screen and brings the switcher
+back. This matches the window by its title, so it is a workaround; if Big Picture still wins, turn off Steam's
+"Guide Button Focuses Steam" (Settings, Controller).
+
 ## Known limitations
 
 - The Guide button is read through XInput's undocumented `XInputGetStateEx` (ordinal 100); some pads and drivers

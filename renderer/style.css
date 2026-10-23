@@ -28,9 +28,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
   font: 600 3vh "Segoe UI", sans-serif; }
 .topbtn svg { width: 3vh; height: 3vh; stroke-width: 2.2; }
 .topbtn.focus { background: rgba(255,255,255,.9); color: #111; }
-#searchInput { flex: 1; height: 100%; background: transparent; border: 0; outline: 0; color: var(--ink);
-  font-size: 2.2vh; padding: 0 1.2vw; opacity: 0; width: 0; flex: 0; transition: opacity .15s; }
-#topbar.searching #searchInput { opacity: 1; flex: 1; }
+#searchLabel { font-size: 2.1vh; color: rgba(255,255,255,.75); padding-left: .4vw; }
 #status { margin-left: auto; display: flex; align-items: center; gap: 1.4vw; padding-left: 1.6vw; height: 100%;
   background: rgba(20,22,28,.6); }
 #status .stat { width: 3vh; height: 3vh; }
@@ -98,8 +96,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 #libBar h2 { font-size: 3.4vh; font-weight: 600; }
 #libBar h2 span { color: var(--dim); font-size: 2.2vh; margin-left: .8vw; }
 #libSearch { flex: 1; max-width: 40vw; height: 5vh; border-radius: 2.5vh; border: 0; outline: 0; padding: 0 1.4vw;
-  background: rgba(255,255,255,.12); color: var(--ink); font-size: 2.1vh; opacity: 0; transition: opacity .15s; }
-#library.searching #libSearch { opacity: 1; }
+  background: rgba(255,255,255,.12); color: var(--ink); font-size: 2.1vh; }
+#libSearch:focus { background: rgba(255,255,255,.2); box-shadow: 0 0 0 .3vh var(--cyan); }
 #libGrid { position: absolute; top: 9vh; bottom: 5.3vh; left: 0; right: 0; overflow: hidden; display: grid;
   grid-template-columns: repeat(6, 1fr); grid-auto-rows: 29vh; gap: 1.6vh 1vw; padding: 1.4vh 2.8vw; align-content: start; }
 .libtile { width: auto; height: auto; }

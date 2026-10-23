@@ -273,6 +273,7 @@ async function homeButton(name) {
       else S.card = clamp(S.card + 1, 0, Math.max(0, cards - 1));
       break;
     case 'b': if (S.zone > ZONE.RECENT) S.zone = ZONE.RECENT; break;
+    case 'y': return startSearch();
     case 'x':
       if (S.zone === ZONE.CARDS && S.tab === 1 && S.wins[S.card]) {
         xbox.call('close', { hwnd: S.wins[S.card].hwnd });
@@ -314,18 +315,14 @@ function toggleHelp(show) {
 }
 
 function startSearch() {
+  if (S.view !== 'library') openLibrary();  // results are always shown in the library grid
   S.searching = true;
-  const inLibrary = S.view === 'library';
-  (inLibrary ? $('#library') : $('#topbar')).classList.add('searching');
-  (inLibrary ? $('#libSearch') : $('#searchInput')).focus();
+  $('#libSearch').focus();
   xbox.kb('show');
 }
 
 function endSearch() {
   S.searching = false;
-  $('#topbar').classList.remove('searching');
-  $('#library').classList.remove('searching');
-  $('#searchInput').blur();
   $('#libSearch').blur();
 }
 
@@ -514,8 +511,13 @@ xbox.on('kb-closed', endSearch);
 const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'a', Escape: 'b',
   x: 'x', y: 'y', q: 'lb', e: 'rb', s: 'start', F1: 'guide' };
 addEventListener('keydown', (ev) => {
-  if ([$('#searchInput'), $('#libSearch')].includes(document.activeElement)) {
+  if (document.activeElement === $('#libSearch')) {
     if (ev.key === 'Enter' || ev.key === 'Escape') { xbox.kb('hide'); endSearch(); }
+    return;
+  }
+  if (S.view === 'library' && ev.key.length === 1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    S.searching = true;  // a physical keyboard types straight into the search box
+    $('#libSearch').focus();
     return;
   }
   if (KEYS[ev.key]) { ev.preventDefault(); onButton(KEYS[ev.key]); }
@@ -533,7 +535,6 @@ function onFilterInput(ev) {
   renderCards();
   updateFocus();
 }
-$('#searchInput').addEventListener('input', onFilterInput);
 $('#libSearch').addEventListener('input', onFilterInput);
 
 // ---- boot ---------------------------------------------------------------------------------------

@@ -64,6 +64,13 @@ def exe_name(hwnd):
     return os.path.basename(exe_path(hwnd)) if hwnd else ""
 
 
+def title(hwnd):
+    n = user32.GetWindowTextLengthW(hwnd)
+    buf = ctypes.create_unicode_buffer(n + 1)
+    user32.GetWindowTextW(hwnd, buf, n + 1)
+    return buf.value
+
+
 def list_windows(exclude=()):
     found = []
 

@@ -14,7 +14,7 @@
       <button id="searchBtn" class="topbtn" aria-label="Search">
         <svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.5"/><path d="M15 15l6 6"/></svg>
       </button>
-      <input id="searchInput" type="text" placeholder="Search your library" autocomplete="off" spellcheck="false">
+      <span id="searchLabel">Search &nbsp;·&nbsp; Y</span>
       <div id="status">
         <svg viewBox="0 0 24 24" class="stat"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3.5 3.5 3.5 14.500 0 18M12 3c-3.500 3.500-3.500 14.500 0 18"/></svg>
         <span id="clock"></span>
@@ -41,7 +41,7 @@
   <section id="library" class="view hidden">
     <header id="libBar">
       <h2>Library <span id="libCount"></span></h2>
-      <input id="libSearch" type="text" placeholder="Type to filter" autocomplete="off" spellcheck="false">
+      <input id="libSearch" type="text" placeholder="Search apps: press Y or just type" autocomplete="off" spellcheck="false">
     </header>
     <div id="libGrid"></div>
     <footer class="hints2">
