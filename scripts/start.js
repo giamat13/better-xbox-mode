@@ -26,8 +26,8 @@ function isElevated() {
 function relaunchElevated(args) {
   const quote = (a) => `'${String(a).replace(/'/g, "''")}'`;
   const list = [path.join(__dirname, 'start.js'), ...args, NO_ELEVATE].map(quote).join(',');
-  const script = `Start-Process -FilePath ${quote(process.execPath)} -ArgumentList ${list} -WorkingDirectory ${quote(process.cwd())} -Verb RunAs`;
-  return spawnSync('powershell', ['-NoProfile', '-Command', script], { stdio: 'inherit' }).status === 0;
+  const script = `Start-Process -FilePath ${quote(process.execPath)} -ArgumentList ${list} -WorkingDirectory ${quote(process.cwd())} -Verb RunAs -WindowStyle Hidden`;
+  return spawnSync('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script], { stdio: 'inherit', windowsHide: true }).status === 0;
 }
 
 const args = process.argv.slice(2).filter((a) => a !== NO_ELEVATE);
