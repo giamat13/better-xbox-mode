@@ -268,10 +268,20 @@ ipcMain.handle('kb', (_e, action) => {
 ipcMain.handle('quit', () => app.quit());
 
 // ---- lifecycle ---------------------------------------------------------------
-// A second copy would start a second engine, and every button press would then be sent twice.
-if (!app.requestSingleInstanceLock()) app.quit();
+// A second copy would start a second engine, and every button press would then be sent twice. Starting Xbox Mode again
+// replaces the running copy (once; if that copy does not go away, this one just exits), so new code is always the code
+// that runs.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  if (!args.includes('--replaced')) {
+    fetch('http://127.0.0.1:47821/quit', { method: 'POST', headers: { 'X-Xbox-Mode-Extension': '1' } }).catch(() => {});
+    setTimeout(() => { app.relaunch({ args: [...process.argv.slice(1), '--replaced'] }); app.exit(0); }, 2500);
+  } else {
+    app.exit(0);
+  }
+}
 
-app.whenReady().then(async () => {
+if (gotLock) app.whenReady().then(async () => {
   startEngine();
   // The chosen display is part of the engine's config; do not wait for an engine that failed to start.
   const cfg = await Promise.race([call('config_get'), new Promise((r) => setTimeout(() => r({}), 3000))]);
@@ -281,6 +291,7 @@ app.whenReady().then(async () => {
     getState: () => ({ running: true, version: app.getVersion(), pad: padConnected }),
     onKeyboard: (action) => (action === 'show' ? showKeyboard() : hideKeyboard()),
     onTab: (game) => post({ cmd: 'tab_game', game }),
+    onQuit: () => app.quit(),
   });
 });
 
