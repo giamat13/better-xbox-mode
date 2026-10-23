@@ -1,124 +1,39 @@
 # Xbox Mode
 
-שליטה בכל המחשב עם שלט Xbox (או כל שלט XInput): עכבר דיגיטלי על הג'ויסטיק השמאלי, כתיבה במקלדת על המסך, והפעלת אפליקציות מתפריט. בתוכנות ובמשחקים שכבר תומכים בשלט לא משתנה כלום, ובכרום יש תוסף שמטפל באתרים שאין להם תמיכה בשלט.
+A clone of the Windows 11 "Xbox full screen experience", built from public documentation of its behavior.
+The original is not installed on the development machine, so this is a behavioral approximation rather than a
+binary-level 1:1 copy.
 
-המערכת מורכבת משני חלקים:
+## Run
 
-- **אפליקציית שולחן עבודה** (`xbox_mode/`, Python): קוראת את השלט, מדמה עכבר ומקלדת ברמת מערכת ההפעלה, ומציגה מתפריט הפעלת אפליקציות.
-- **תוסף Chrome** (`extension/`, Manifest V3): מטפל בדפים בכרום בלי תמיכה בשלט, ומדווח לאפליקציה על localhost מתי הוא פעיל.
+```
+pip install -r requirements.txt
+python -m xbox_mode            # full screen, hides the taskbar
+python -m xbox_mode --windowed # 1280x720 window for development
+```
 
-## התקנה ב-Windows
+## Controls
 
-1. התקן Python 3.11 או חדש יותר.
-2. בתיקיית הפרויקט:
-   ```
-   pip install -r requirements.txt
-   python -m xbox_mode
-   ```
-3. בכרום: `chrome://extensions` → הפעל **Developer mode** → **Load unpacked** → בחר את התיקייה `extension`.
-4. אופציונלי: העתק `config.example.json` ל-`config.json` ושנה לפי הצורך. בלי הקובץ נטענים ערכי ברירת המחדל.
-
-לרשימת האפליקציות שהמערכת מזהה: `python -m xbox_mode --list-apps`.
-
-## מיפוי כפתורים
-
-| כפתור | פעולה בשולחן העבודה | פעולה בכרום |
+| Where | Input | Action |
 |---|---|---|
-| ג'ויסטיק שמאלי | הזזת העכבר | הזזת הסמן |
-| ג'ויסטיק ימני (למעלה/למטה) | גלילה | גלילה באלמנט שמתחת לסמן |
-| A | לחיצה שמאלית (החזקה = גרירה) | לחיצה / גרירה |
-| B | לחיצה ימנית | תפריט הקשר |
-| LS | לחיצת אמצע | — |
-| X | Backspace | מחיקת תו בשדה הפעיל |
-| Y | פתיחה/סגירה של מקלדת המסך של Windows (`osk.exe`) | פתיחה/סגירה של המקלדת שבדף (מקלידה לשדה הטקסט האחרון) |
-| Start | Enter | אירוע Enter לדף (לא מקליד טקסט) |
-| Back | Escape | — |
-| D-pad | חצים (חוזרים כשמחזיקים) | חצים (ללא חזרה) |
-| Guide | פתיחה/סגירה של מתפריט האפליקציות | — |
-| LB + RB (החזקה של שנייה) | הפעלה/כיבוי של Xbox mode | — |
+| Launcher | D-pad / left stick | Navigate |
+| Launcher | A | Launch / select |
+| Launcher | LB / RB | Switch tab (Home, Library, Settings) |
+| Launcher | Y | Rescan apps |
+| Anywhere | Guide (Xbox button) | Open the switcher over the launcher |
+| Switcher | A / X / B | Switch to window / close window / back |
+| Desktop apps | Left stick | Move cursor |
+| Desktop apps | A / X | Left / right click |
+| Desktop apps | Right stick | Scroll |
+| Desktop apps | D-pad | Arrow keys |
+| Desktop apps | B | Esc |
+| Desktop apps | Y | Open the built-in on-screen keyboard (English / Hebrew / symbols) |
+| Keyboard | D-pad / stick, A | Move, type |
+| Keyboard | B / X / Start | Backspace / space / Enter |
+| Keyboard | LB / RB | Cursor left / right |
+| Keyboard | Y / Guide | Close |
 
-בתוך מתפריט האפליקציות: D-pad לניווט, A להפעלה, B לסגירה.
+Keyboard fallback for development: arrows, Enter (A), Esc (B), X, Y, Q/E (LB/RB), F1 (Guide).
 
-## איך המערכת מחליטה מתי לשלוט
-
-הכלל הוא שהמערכת לא מכירה רשימה של משחקים. במקום זה היא בודקת מה קורה בפועל:
-
-1. **תהליך שטוען ספריית שלט** (`xinput1_*.dll`, `xinput9_1_0.dll`, `windows.gaming.input.dll`) בתוך החלון שבפוקוס. זה נכון גם למשחק פרטי שלא נמצא בשום חנות, כי כל תוכנה שקוראת שלט טוענת את הספריות האלה. במקרה כזה המערכת לא מדמה עכבר או מקלדת, והמשחק מקבל את השלט ישירות.
-2. **דפדפן עם התוסף**: התוסף מדווח כל 400 ms על שני מצבים. `handling` אומר שהתוסף מטפל בדף. `native` אומר שהדף קורא את השלט בעצמו (למשל דרך `navigator.getGamepads` או `gamepadconnected`), ואז התוסף שותק והאתר מקבל את השלט כרגיל. אם אין דיווח טרי, המערכת מדמה כרגיל.
-3. **אפליקציה רגילה** בלי ספריות שלט: מדמה עכבר ומקלדת.
-
-אפשר לעקוף את ההחלטה לכל תוכנה ב-`config.json`:
-
-```json
-"overrides": { "game.exe": "emulate", "steam.exe": "pass_through" }
-```
-
-הדלקת `"detect_dinput": true` מוסיפה גם את `dinput8.dll` לזיהוי, כלומר משחקים ישנים שקוראים DirectInput. זה כבוי כברירת מחדל, כי ספריית DirectInput נטענת גם באפליקציות שאינן משחקים.
-
-## קבצים
-
-```
-xbox_mode/        אפליקציית שולחן העבודה
-  main.py         לולאת הבקרה (tick_rate, ברירת מחדל 120 Hz)
-  engine.py       מפה קלט לפעולות: עכבר, מקלדת, מתפריט, מקלדת מסך
-  policy.py       החלטה אם לשלוט עכשיו (משחק / דפדפן / עקיפה)
-  gamepad_usage.py זיהוי ספריות שלט בתהליך
-  heartbeat.py    שרת localhost על 127.0.0.1:8765 שהתוסף מדווח אליו
-  backend_win.py  פלט ל-Windows דרך SendInput (scan codes)
-  backend_xtest.py פלט ל-Linux דרך XTEST (לבדיקות ב-Xvfb)
-extension/        תוסף Chrome (MV3)
-  page-hook.js    רץ בעולם הדף: מזהה דפים שקוראים שלט, ומעביר את מצב השלט
-  content.js      סמן, לחיצה, גרירה, גלילה, חצים
-  osk.js          מקלדת על המסך בתוך הדף
-  background.js   שולח את ה-heartbeat לאפליקציה
-tests/            בדיקות יחידה (unittest) ובדיקות e2e (Playwright, בקובץ e2e/)
-```
-
-## בדיקות
-
-הרצה:
-
-```
-DISPLAY=:99 python3 -m unittest discover -s tests -t .
-NODE_PATH=/opt/node22/lib/node_modules node --test tests/e2e/extension.test.cjs
-```
-
-מה נבדק ואיך:
-
-- **108 בדיקות unittest:** בלינוקס 13 מהן מדולגות (הבדיקות החיות ל-Windows), וב-Windows מדולגת בדיקת XTest אחת. בכל ההרצות האחרות כולן עוברות.
-- **בדיקות יחידה (Python):** עקומת הג'ויסטיק, מעברי כפתורים, צבירת תת-פיקסלים, חזרה של D-pad, מצב המתפריט, גילוי אפליקציות (`.desktop` ו-`.lnk` מתיקיות בדיקה), מדיניות הזיהוי, שרת ה-heartbeat, וטעינת הגדרות.
-- **בדיקת סמן אמיתי:** מתחת ל-Xvfb, המנוע שולח תנועות דרך XTEST, והסמן האמיתי של X זז +639 פיקסלים אופקית ללא שינוי אנכי, ונעצר בקצה המסך (1279). זה אומת.
-- **8 בדיקות e2e בכרום אמיתי (headless) עם שלט מדומה:** הסמן מופיע רק אחרי לחיצה ראשונה; הזזת ג'ויסטיק + A לוחצת על האלמנט שמתחת לסמן; גלילה בג'ויסטיק הימני; גרירה בלי לחיצה; מקלדת המסך מקלידה לתוך שדה; דף שקורא שלט (דרך `gamepadconnected` או דרך polling) נשאר פסיבי; ה-heartbeat מגיע לאפליקציה עם `handling` או `native`.
-- **בדיקת רגישות:** השבתתי את זיהוי הדף שקורא שלט, ושלוש בדיקות הפסיביות נכשלו כצפוי. לכן הן בודקות התנהגות אמיתית ולא רק את עצמן.
-
-## מה נבדק על Windows אמיתי (GitHub Actions, `windows-latest`)
-
-ה-workflow `Windows verification` רץ על כל push ל-`main`:
-
-- **SendInput:** תנועת העכבר, כפתור שמאלי ו-Enter נרשמים במערכת (נבדק דרך `GetCursorPos` ו-`GetAsyncKeyState`). המנוע מזיז את הסמן האמיתי לפי ג'ויסטיק מדומה.
-- **זיהוי ספריות שלט:** תהליך שטוען `xinput1_4.dll` מזוהה, ותהליך רגיל לא.
-- **גילוי והפעלת אפליקציות:** נמצאו 162 קיצורי דרך בתפריט התחל, ו-`notepad.exe` נפתח בפועל.
-- **מקלדת המסך (`osk.exe`):** נפתחת ונסגרת. בהרצה הראשונה Windows דחה את `CreateProcess` עם `WinError 740`, ולכן יש גיבוי דרך `os.startfile`.
-- **חלון המתפריט (tkinter):** נפתח ונסגר.
-- **תוסף Chrome:** 8 בדיקות Playwright בכרום של Windows עם שלט מדומה.
-
-## מה לא נבדק
-
-- **שלט פיזי.** זרימת הקלט מה-pygame אל השלט לא נבדקה, כי אין שלט ב-CI. מיפוי האינדקסים מניח XInput סטנדרטי, וצריך לאמת אותו על השלט שלך.
-- **שלט וירטואלי ב-CI.** ניסיתי ליצור שלט Xbox וירטואלי דרך ViGEmBus ו-`vgamepad` (`tests/test_virtual_controller.py`, ה-workflow `windows-virtual-pad.yml`, שמופעל ידנית בלבד). ההתקנה של הדרייבר והתחברות ה-bus הצליחו, אבל הוספת ה-target נכשלה (`0xE0000007`, לא מחובר) גם ב-`windows-2025` וגם ב-`windows-2022`. הבדיקה הזו עדיין לא עוברת, ולכן שרשרת הקלט מהשלט עצמו לא אומתה.
-- **משחקים אמיתיים.** זיהוי הספרייה נבדק בתהליך בדיקה, לא במשחק שמשתמשים בו.
-- **מקלדת מסך במחשב רגיל.** הבדיקה רצה ב-CI, ולכן לא נבדק שההתנהגות זהה במחשב ביתי.
-- **דפדפנים אחרים.** נבדק רק Chromium. Edge ו-Brave מבוססי Chromium ואמורים לעבוד, אבל לא אומתו. Firefox לא נתמך.
-
-## מגבלות ידועות
-
-- תוכנה שקוראת שלט דרך Raw Input או HID ישירות (בלי XInput) לא תזוהה אוטומטית.
-- תוכנה שטוענת XInput בלי לקרוא ממנו (לדוגמה שכבות כמו overlay) תיחשב כ"משחק" ולא תקבל עכבר.
-- התוסף לא פועל ב-iframes ובדפי `chrome://`.
-- ב-D-pad של הדפדפן אין חזרה כשמחזיקים.
-- בכרום, Start ו-D-pad שולחים אירועי מקלדת לדף. הדף מקבל אותם, אבל הם לא מקלידים טקסט. הקלדה נעשית רק דרך מקלדת המסך של התוסף.
-- אם פתוחים כמה חלונות כרום, כל חלון גלוי שולח heartbeat משלו, והאפליקציה מקבלת את האחרון שהגיע. במצב כזה ההחלטה עלולה להתחלף בין חלונות.
-
-## קרדיטים
-
-נערך חיפוש של פרויקטים ציבוריים דומים. לא הועתק קוד מאף פרויקט. מה שנלקח הוא רעיונות בלבד: שמות ה-DLL של XInput נלקחו מהתיעוד של Xinput-Modkey ומהתיאור של טעינת XInput.NET בתוצאות החיפוש. הרעיון של סמן על הג'ויסטיק השמאלי וגלילה על הימני מופיע גם ב-Gopher360 וב-Controller as Mouse, לפי תיאורים בתוצאות החיפוש בלבד; לא קראתי את הקוד שלהם. הרישיונות של הפרויקטים האלה לא נבדקו. אם בעתיד ייכנס לקוד משהו מהם, צריך לבדוק את הרישיון קודם.
+Controller-as-mouse is automatically off while a full-screen app (a game) is in the foreground.
+The taskbar is restored on exit.
