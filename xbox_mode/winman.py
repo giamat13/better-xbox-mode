@@ -153,28 +153,63 @@ def screen_size():
     return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
 
 
-def covers_screen(hwnd):
+class _MonitorInfo(ctypes.Structure):
+    _fields_ = [("cbSize", wt.DWORD), ("rcMonitor", wt.RECT), ("rcWork", wt.RECT), ("dwFlags", wt.DWORD)]
+
+
+user32.MonitorFromWindow.argtypes = [wt.HWND, wt.DWORD]
+user32.MonitorFromWindow.restype = wt.HANDLE
+user32.GetMonitorInfoW.argtypes = [wt.HANDLE, ctypes.POINTER(_MonitorInfo)]
+
+
+def window_rect(hwnd):
     rect = wt.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
-    w, h = screen_size()
-    return rect.left <= 0 and rect.top <= 0 and rect.right >= w and rect.bottom >= h
+    return rect.left, rect.top, rect.right, rect.bottom
+
+
+def monitor_rect(hwnd):
+    """The full area of the monitor the window is on (not just the primary one)."""
+    info = _MonitorInfo()
+    info.cbSize = ctypes.sizeof(_MonitorInfo)
+    if user32.GetMonitorInfoW(user32.MonitorFromWindow(hwnd, 2), ctypes.byref(info)):  # MONITOR_DEFAULTTONEAREST
+        m = info.rcMonitor
+        return m.left, m.top, m.right, m.bottom
+    return (0, 0) + screen_size()
+
+
+def covers(rect, monitor):
+    return rect[0] <= monitor[0] and rect[1] <= monitor[1] and rect[2] >= monitor[2] and rect[3] >= monitor[3]
+
+
+def covers_screen(hwnd):
+    return covers(window_rect(hwnd), monitor_rect(hwnd))
+
+
+def fullscreen_plan(cls, style, rect, monitor):
+    """Decides how to make a window borderless and monitor-sized, like F11: (new style, (x, y, w, h)), or None to
+    leave it alone. Windows that are already full screen without a title bar are never touched, and nothing is ever
+    restored or shrunk: apps read that as a request to leave their own full-screen mode."""
+    if cls in NO_FULLSCREEN_CLASSES or not style & WS_THICKFRAME:
+        return None
+    if rect[2] - rect[0] < 400 or rect[3] - rect[1] < 300:
+        return None
+    if covers(rect, monitor) and style & WS_CAPTION != WS_CAPTION:
+        return None
+    return style & ~(WS_CAPTION | WS_THICKFRAME), (monitor[0], monitor[1], monitor[2] - monitor[0], monitor[3] - monitor[1])
 
 
 def fullscreenize(hwnd):
-    """Makes an ordinary resizable window borderless and screen-sized, like pressing F11. Returns True if applied."""
+    """Applies fullscreen_plan to a window. Returns True if it changed anything."""
     cls = ctypes.create_unicode_buffer(64)
     user32.GetClassNameW(hwnd, cls, 64)
     style = user32.GetWindowLongW(hwnd, -16) & 0xFFFFFFFF
-    rect = wt.RECT()
-    user32.GetWindowRect(hwnd, ctypes.byref(rect))
-    if (cls.value in NO_FULLSCREEN_CLASSES or not style & WS_THICKFRAME
-            or rect.right - rect.left < 400 or rect.bottom - rect.top < 300):
+    plan = fullscreen_plan(cls.value, style, window_rect(hwnd), monitor_rect(hwnd))
+    if plan is None:
         return False
-    if user32.IsZoomed(hwnd):
-        user32.ShowWindow(hwnd, 9)  # SW_RESTORE, so the saved normal size is not the maximized one
-    user32.SetWindowLongW(hwnd, -16, ctypes.c_long(style & ~(WS_CAPTION | WS_THICKFRAME)).value)
-    w, h = screen_size()
-    user32.SetWindowPos(hwnd, None, 0, 0, w, h, 0x0004 | 0x0010 | 0x0020)  # NOZORDER | NOACTIVATE | FRAMECHANGED
+    new_style, (x, y, w, h) = plan
+    user32.SetWindowLongW(hwnd, -16, ctypes.c_long(new_style).value)
+    user32.SetWindowPos(hwnd, None, x, y, w, h, 0x0004 | 0x0010 | 0x0020)  # NOZORDER | NOACTIVATE | FRAMECHANGED
     return True
 
 

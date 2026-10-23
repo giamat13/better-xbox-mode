@@ -15,6 +15,17 @@ def gamepad(buttons=0, lx=0, ly=0):
                            sThumbRX=0, sThumbRY=0)
 
 
+class IsolatedConfig(unittest.TestCase):
+    """Tests must never read or write the real %APPDATA%\\xbox_mode\\config.json."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        patch = mock.patch.object(apps, "config_path", return_value=Path(tmp.name) / "config.json")
+        patch.start()
+        self.addCleanup(patch.stop)
+
+
 class PadTests(unittest.TestCase):
     def pad_with(self, frames):
         pad = Pad()
@@ -64,7 +75,37 @@ class PadTests(unittest.TestCase):
         self.assertIn("guide", pad.pressed)
 
 
-class GameDetectionTests(unittest.TestCase):
+class FullscreenPlanTests(unittest.TestCase):
+    MONITOR = (0, 0, 1920, 1080)
+    NORMAL = winman.WS_CAPTION | winman.WS_THICKFRAME | 0x10000000  # a regular resizable window
+
+    def plan(self, style=NORMAL, rect=(100, 100, 1100, 800), monitor=MONITOR, cls="Chrome_WidgetWin_1"):
+        return winman.fullscreen_plan(cls, style, rect, monitor)
+
+    def test_regular_window_becomes_borderless_and_monitor_sized(self):
+        style, box = self.plan()
+        self.assertEqual(style & (winman.WS_CAPTION | winman.WS_THICKFRAME), 0)
+        self.assertEqual(box, (0, 0, 1920, 1080))
+
+    def test_uses_the_monitor_the_window_is_on(self):
+        self.assertEqual(self.plan(rect=(2000, 50, 3000, 700), monitor=(1920, 0, 5760, 2160))[1], (1920, 0, 3840, 2160))
+
+    def test_window_that_is_already_full_screen_is_left_alone(self):
+        borderless = winman.WS_THICKFRAME | 0x10000000
+        self.assertIsNone(self.plan(style=borderless, rect=(0, 0, 1920, 1080)))
+
+    def test_maximized_window_with_a_title_bar_loses_the_bars_without_shrinking(self):
+        style, box = self.plan(rect=(-8, -8, 1928, 1088))
+        self.assertEqual(style & winman.WS_CAPTION, 0)
+        self.assertEqual(box, (0, 0, 1920, 1080))
+
+    def test_dialogs_fixed_size_and_small_windows_are_left_alone(self):
+        self.assertIsNone(self.plan(cls="#32770"))
+        self.assertIsNone(self.plan(style=winman.WS_CAPTION))
+        self.assertIsNone(self.plan(rect=(0, 0, 300, 200)))
+
+
+class GameDetectionTests(IsolatedConfig):
     def make(self, exe="game.exe", covers=True, modules=frozenset(), exclusive=False, **cfg):
         engine = Engine()
         engine.cfg.update({"game_apps": [], "mouse_apps": [], **cfg})
@@ -123,7 +164,7 @@ class GameDetectionTests(unittest.TestCase):
             self.assertTrue(engine.is_game(99, 2.0))
 
 
-class SteamGuardTests(unittest.TestCase):
+class SteamGuardTests(IsolatedConfig):
     def run_guard(self, exe, launching=None, pushed=0):
         engine = Engine()
         engine.ui_hwnd = 1
@@ -166,7 +207,7 @@ class SteamGuardTests(unittest.TestCase):
         self.assertEqual(self.run_guard("game.exe"), [])
 
 
-class AppsTests(unittest.TestCase):
+class AppsTests(IsolatedConfig):
     def test_scan_skips_helper_shortcuts_and_dedupes(self):
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
             for root, names in ((a, ["Cool Game.lnk", "Uninstall Cool Game.lnk", "Readme.lnk"]),
