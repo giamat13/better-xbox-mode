@@ -1,10 +1,11 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, screen, desktopCapturer, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Notification, screen, desktopCapturer, nativeImage, shell } = require('electron');
 const { spawn } = require('child_process');
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
 const { canShowWindow } = require('./pe');
+const { startBridge } = require('./bridge');
 
 const args = process.argv.slice(2);
 const argValue = (name) => (args.find((a) => a.startsWith(`--${name}=`)) || '').split('=').slice(1).join('=');
@@ -17,6 +18,9 @@ let kbWin = null;
 let engine = null;
 let nextId = 1;
 let uiHwnd = 0;
+let padConnected = false;
+let padBattery = null;
+let displayId = null;  // the display the UI lives on; null means the main one
 const pending = new Map();
 
 // ---- Python engine bridge -------------------------------------------------
@@ -59,7 +63,21 @@ function onEngineLine(line) {
       break;
     case 'guide': onGuide(); break;
     case 'toggle_kb': toggleKeyboard(); break;
-    case 'pad': win?.webContents.send('pad', msg.connected); break;
+    case 'pad': padConnected = Boolean(msg.connected); win?.webContents.send('pad', msg.connected); break;
+    case 'battery': {
+      const was = padBattery;
+      padBattery = msg.level;
+      win?.webContents.send('battery', msg.level);
+      if ((msg.level === 'low' || msg.level === 'empty') && was !== msg.level && Notification.isSupported()) {
+        new Notification({
+          title: 'Controller battery low',
+          body: msg.level === 'empty' ? 'It is almost empty. Plug in a cable or change the batteries.' : 'Plug in a cable or change the batteries soon.',
+        }).show();
+      }
+      break;
+    }
+    case 'apps_changed': win?.webContents.send('apps-changed'); break;
+    case 'guide_long': onGuideLong(); break;
   }
 }
 
@@ -73,9 +91,24 @@ async function onGuide() {
   win.webContents.send('open-switcher', { prev });
 }
 
+// Holding Guide opens quick settings, the way a short press opens the switcher.
+async function onGuideLong() {
+  hideKeyboard();
+  if (win.isFocused()) {
+    win.webContents.send('open-quick', { prev: 0 });
+    return;
+  }
+  const prev = await call('foreground');
+  win.webContents.send('open-quick', { prev });
+}
+
 // ---- windows -----------------------------------------------------------------
+function currentDisplay() {
+  return screen.getAllDisplays().find((d) => d.id === displayId) || screen.getPrimaryDisplay();
+}
+
 function createMainWindow() {
-  const d = screen.getPrimaryDisplay();
+  const d = currentDisplay();
   const b = WINDOWED ? { x: d.bounds.x, y: d.bounds.y, width: 1280, height: 720 } : d.bounds;
   win = new BrowserWindow({
     ...b, frame: false, resizable: false, backgroundColor: '#0b0d12', show: false,
@@ -108,9 +141,9 @@ function createMainWindow() {
 }
 
 function showKeyboard() {
-  const d = screen.getPrimaryDisplay().bounds;
+  const d = currentDisplay().bounds;
   const w = Math.round(d.width * 0.62);
-  const h = Math.round(d.height * 0.4);
+  const h = Math.round(d.height * 0.46);
   if (!kbWin) {
     kbWin = new BrowserWindow({
       width: w, height: h, x: d.x + Math.round((d.width - w) / 2), y: d.y + d.height - h - Math.round(d.height * 0.03),
@@ -167,6 +200,11 @@ const WINDIR = (process.env.WINDIR || 'C:\\Windows').toLowerCase();
 function filterApps(list) {
   const seen = new Set();
   return list.filter((a) => {
+    if (a.path.startsWith('shell:')) {  // Microsoft Store apps have no shortcut to read
+      if (seen.has(a.path)) return false;
+      seen.add(a.path);
+      return true;
+    }
     let target = '';
     try { target = (shell.readShortcutLink(a.path).target || '').toLowerCase(); } catch { return false; }
     if (!target.endsWith('.exe') || target.startsWith(`${WINDIR}\\`) || seen.has(target)) return false;
@@ -205,6 +243,23 @@ ipcMain.handle('selfShot', async () => {
   } catch { return null; }
 });
 ipcMain.handle('focusUi', () => post({ cmd: 'focus', hwnd: uiHwnd }));
+ipcMain.handle('padState', () => ({ connected: padConnected, battery: padBattery }));
+ipcMain.handle('displays', () => {
+  const main = screen.getPrimaryDisplay().id;
+  const cur = currentDisplay().id;
+  return screen.getAllDisplays().map((d, i) => ({
+    id: d.id, current: d.id === cur,
+    label: `Display ${i + 1}${d.id === main ? ' (main)' : ''}  ${d.bounds.width}x${d.bounds.height}`,
+  }));
+});
+ipcMain.handle('setDisplay', async (_e, id) => {
+  displayId = id;
+  const b = currentDisplay().bounds;
+  win.setBounds(WINDOWED ? { x: b.x, y: b.y, width: 1280, height: 720 } : b);
+  if (kbWin) { kbWin.destroy(); kbWin = null; }  // it is rebuilt on the new display the next time it opens
+  await call('config_set', { key: 'display_id', value: id });
+  return true;
+});
 ipcMain.handle('kb', (_e, action) => {
   if (action === 'show') showKeyboard();
   else if (action === 'hide') hideKeyboard();
@@ -213,9 +268,16 @@ ipcMain.handle('kb', (_e, action) => {
 ipcMain.handle('quit', () => app.quit());
 
 // ---- lifecycle ---------------------------------------------------------------
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   startEngine();
+  // The chosen display is part of the engine's config; do not wait for an engine that failed to start.
+  const cfg = await Promise.race([call('config_get'), new Promise((r) => setTimeout(() => r({}), 3000))]);
+  displayId = cfg.display_id ?? null;
   createMainWindow();
+  startBridge({
+    getState: () => ({ running: true, version: app.getVersion(), pad: padConnected }),
+    onKeyboard: (action) => (action === 'show' ? showKeyboard() : hideKeyboard()),
+  });
 });
 
 app.on('before-quit', () => {

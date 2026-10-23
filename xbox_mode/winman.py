@@ -178,6 +178,120 @@ def monitor_rect(hwnd):
     return (0, 0) + screen_size()
 
 
+class _Rect(ctypes.Structure):
+    _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+
+_MONITORENUMPROC = ctypes.WINFUNCTYPE(wt.BOOL, wt.HANDLE, wt.HDC, ctypes.POINTER(_Rect), wt.LPARAM)
+user32.EnumDisplayMonitors.argtypes = [wt.HDC, ctypes.c_void_p, _MONITORENUMPROC, wt.LPARAM]
+user32.GetCursorPos.argtypes = [ctypes.POINTER(wt.POINT)]
+
+
+def monitors():
+    """Every monitor as {"rect", "work", "primary"}, the primary one first, then left to right."""
+    found = []
+
+    @_MONITORENUMPROC
+    def cb(handle, _dc, _rect, _lp):
+        info = _MonitorInfo()
+        info.cbSize = ctypes.sizeof(_MonitorInfo)
+        if user32.GetMonitorInfoW(handle, ctypes.byref(info)):
+            m, w = info.rcMonitor, info.rcWork
+            found.append({"rect": (m.left, m.top, m.right, m.bottom), "work": (w.left, w.top, w.right, w.bottom),
+                          "primary": bool(info.dwFlags & 1)})
+        return True
+
+    user32.EnumDisplayMonitors(None, None, cb, 0)
+    found.sort(key=lambda m: (not m["primary"], m["rect"][0], m["rect"][1]))
+    return found
+
+
+def monitor_index(mons, rect):
+    """Index of the monitor that holds the most of a rectangle (its centre decides)."""
+    cx, cy = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+    for i, m in enumerate(mons):
+        r = m["rect"]
+        if r[0] <= cx < r[2] and r[1] <= cy < r[3]:
+            return i
+    return 0
+
+
+def snap_rect(work, side):
+    """The left or right half of a monitor's work area as (x, y, w, h)."""
+    x, y, w, h = work[0], work[1], work[2] - work[0], work[3] - work[1]
+    half = w // 2
+    return (x, y, half, h) if side == "left" else (x + half, y, w - half, h)
+
+
+def relocate_rect(rect, src_work, dst_work):
+    """Moves a window rectangle to another monitor, keeping its place and size relative to the work area (shrunk
+    only if it would no longer fit). Returns (x, y, w, h)."""
+    sw, sh = src_work[2] - src_work[0], src_work[3] - src_work[1]
+    dw, dh = dst_work[2] - dst_work[0], dst_work[3] - dst_work[1]
+    w = min(rect[2] - rect[0], dw)
+    h = min(rect[3] - rect[1], dh)
+    fx = (rect[0] - src_work[0]) / sw if sw else 0
+    fy = (rect[1] - src_work[1]) / sh if sh else 0
+    x = dst_work[0] + min(max(round(fx * dw), 0), dw - w)
+    y = dst_work[1] + min(max(round(fy * dh), 0), dh - h)
+    return x, y, w, h
+
+
+def maximize(hwnd):
+    user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+
+
+def restore(hwnd):
+    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+
+
+def place(hwnd, x, y, w, h):
+    if user32.IsZoomed(hwnd) or user32.IsIconic(hwnd):
+        restore(hwnd)
+    user32.SetWindowPos(hwnd, None, x, y, w, h, 0x0004 | 0x0010)  # NOZORDER | NOACTIVATE
+
+
+def snap(hwnd, side):
+    mons = monitors()
+    here = mons[monitor_index(mons, window_rect(hwnd))]
+    place(hwnd, *snap_rect(here["work"], side))
+
+
+def move_to_next_monitor(hwnd):
+    """Sends a window to the next monitor (wrapping around). A maximized window stays maximized there."""
+    mons = monitors()
+    if len(mons) < 2:
+        return False
+    was_zoomed = bool(user32.IsZoomed(hwnd))
+    if was_zoomed:
+        restore(hwnd)
+    rect = window_rect(hwnd)
+    i = monitor_index(mons, rect)
+    target = mons[(i + 1) % len(mons)]
+    place(hwnd, *relocate_rect(rect, mons[i]["work"], target["work"]))
+    if was_zoomed:
+        maximize(hwnd)
+    return True
+
+
+def cursor_pos():
+    pt = wt.POINT()
+    user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x, pt.y
+
+
+def move_cursor_to_next_monitor():
+    """Jumps the mouse cursor to the middle of the next monitor."""
+    mons = monitors()
+    if len(mons) < 2:
+        return False
+    x, y = cursor_pos()
+    i = monitor_index(mons, (x, y, x, y))
+    r = mons[(i + 1) % len(mons)]["rect"]
+    user32.SetCursorPos((r[0] + r[2]) // 2, (r[1] + r[3]) // 2)
+    return True
+
+
 def covers(rect, monitor):
     return rect[0] <= monitor[0] and rect[1] <= monitor[1] and rect[2] >= monitor[2] and rect[3] >= monitor[3]
 

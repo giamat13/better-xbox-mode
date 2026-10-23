@@ -11,15 +11,16 @@ XInput, DirectInput, SDL, GameInput or Steam's API), runs exclusive Direct3D ful
 """
 import ctypes
 import json
+import os
 import queue
 import sys
 import threading
 import time
 
 from . import apps as appmod
-from . import winman
+from . import system, winman
 from .mouse import MouseMode
-from .sendinput import send_text, send_vk
+from .sendinput import send_combo, send_text, send_vk, vk_for_char
 from .xinput import Pad
 
 TICK = 1 / 125
@@ -27,6 +28,8 @@ WATCH_SECONDS = 45
 STEAM_GUARD_SECONDS = 4  # after Guide, how long a Steam window that takes the screen is pushed back
 STEAM_EXES = {"steam.exe", "steamwebhelper.exe"}
 STEAM_MAX_PUSHES = 3
+GUIDE_HOLD_SECONDS = 0.6  # holding the Guide button this long opens quick settings instead of the switcher
+STORE_REFRESH_SECONDS = 600
 WINDOWLESS_AFTER = 2  # launches in a row that showed no window before an app is hidden
 D3D_EXCLUSIVE = 3  # QUNS_RUNNING_D3D_FULL_SCREEN
 AWARE_RECHECK_SECONDS = 2.0
@@ -55,6 +58,12 @@ class Engine:
         self.guard_until = 0.0
         self.next_guard = 0.0
         self.pushed = 0
+        self.guide_down = None  # when the Guide button went down, while it is still held
+        self.guide_long_sent = False
+        self.battery_sent = "unset"
+        self.store_apps = []  # Microsoft Store apps, found in the background because PowerShell takes a moment
+        self.store_at = 0.0
+        self.store_busy = False
 
     # ---- io ------------------------------------------------------------
     def emit(self, obj):
@@ -97,8 +106,9 @@ class Engine:
             usage = self.cfg["usage"]
             hidden = set(self.cfg["hidden_apps"]) | {p for p, n in self.cfg["windowless"].items()
                                                      if n >= WINDOWLESS_AFTER}
+            self.refresh_store()
             data = [{"name": a.name, "path": a.path, "folder": a.folder, "last": usage.get(a.path, 0)}
-                    for a in appmod.scan() if a.path not in hidden]
+                    for a in appmod.scan(extra=self.store_apps) if a.path not in hidden]
         elif cmd == "launch":
             appmod.launch(appmod.App(msg.get("name", ""), msg["path"]), self.cfg)
             seen = {w.hwnd for w in winman.list_windows(exclude=(self.ui_hwnd,))}
@@ -117,14 +127,78 @@ class Engine:
             appmod.save_config(self.cfg)
             if msg["key"] == "hide_taskbar":
                 self.set_taskbar(not msg["value"])
+        elif cmd == "window_action":
+            data = self.window_action(msg["hwnd"], msg["action"])
+        elif cmd == "monitors":
+            data = winman.monitors()
+        elif cmd == "cursor_next_monitor":
+            data = winman.move_cursor_to_next_monitor()
+        elif cmd == "places":
+            data = appmod.places(self.cfg)
+        elif cmd == "open":
+            try:
+                os.startfile(msg["path"])
+                data = True
+            except OSError:
+                data = False
+        elif cmd == "favorite_add":
+            self.cfg["favorites"] = [f for f in self.cfg["favorites"] if f["url"] != msg["url"]] + [
+                {"name": msg.get("name") or msg["url"], "url": msg["url"]}]
+            appmod.save_config(self.cfg)
+        elif cmd == "favorite_remove":
+            self.cfg["favorites"] = [f for f in self.cfg["favorites"] if f["url"] != msg["url"]]
+            appmod.save_config(self.cfg)
+        elif cmd == "system":
+            data = system.run(msg["action"])
+        elif cmd == "chord":
+            vks = [k if isinstance(k, int) else vk_for_char(k) for k in msg["keys"]]
+            if vks and None not in vks:
+                send_combo(vks)
         elif cmd == "type":
             send_text(msg["text"])
         elif cmd == "vk":
-            send_vk(msg["code"])
+            for _ in range(min(int(msg.get("times", 1)), 64)):
+                send_vk(msg["code"])
         elif cmd == "quit":
             self.running = False
         if "id" in msg:
             self.emit({"t": "res", "id": msg["id"], "data": data})
+
+    def window_action(self, hwnd, action):
+        if action == "minimize":
+            winman.minimize(hwnd)
+        elif action == "maximize":
+            winman.maximize(hwnd)
+        elif action == "restore":
+            winman.restore(hwnd)
+        elif action in ("snap_left", "snap_right"):
+            winman.snap(hwnd, action.split("_")[1])
+        elif action == "next_monitor":
+            return winman.move_to_next_monitor(hwnd)
+        elif action == "close":
+            winman.close(hwnd)
+        else:
+            return False
+        return True
+
+    def refresh_store(self):
+        """Looks for Microsoft Store apps in the background (at most every ten minutes) and tells the UI when done."""
+        if self.store_busy or (self.store_at and time.monotonic() - self.store_at < STORE_REFRESH_SECONDS):
+            return
+        self.store_busy = True
+
+        def work():
+            try:
+                found = appmod.scan_store()
+                changed = {a.path for a in found} != {a.path for a in self.store_apps}
+                self.store_apps = found
+                if changed:
+                    self.emit({"t": "apps_changed"})
+            finally:
+                self.store_at = time.monotonic()
+                self.store_busy = False
+
+        threading.Thread(target=work, daemon=True).start()
 
     # ---- policy --------------------------------------------------------
     def is_game(self, hwnd, now):
@@ -224,6 +298,9 @@ class Engine:
         if pad.connected != self.was_connected:
             self.was_connected = pad.connected
             self.emit({"t": "pad", "connected": pad.connected})
+        if pad.battery != self.battery_sent:
+            self.battery_sent = pad.battery
+            self.emit({"t": "battery", "level": pad.battery})
         if self.launch and now >= self.next_watch:
             self.next_watch = now + 0.5
             self.watch_launch(now)
@@ -232,10 +309,21 @@ class Engine:
             self.next_guard = now + 0.1
             self.reclaim_from_steam(fg)
 
+        # A short press of Guide opens the switcher (sent on release); holding it opens quick settings.
+        if self.guide_down is not None:
+            if "guide" not in pad.held:
+                if not self.guide_long_sent:
+                    self.emit({"t": "guide"})
+                self.guide_down = None
+            elif not self.guide_long_sent and now - self.guide_down >= GUIDE_HOLD_SECONDS:
+                self.guide_long_sent = True
+                self.emit({"t": "guide_long"})
+
         if "guide" in pad.pressed:
             self.pushed = 0
             self.guard_until = now + STEAM_GUARD_SECONDS
-            self.emit({"t": "guide"})
+            self.guide_down = now
+            self.guide_long_sent = False
         elif in_ui or self.kb_visible:
             target = "kb" if self.kb_visible else "ui"
             for name in pad.events():
@@ -249,6 +337,7 @@ class Engine:
 
     def run(self):
         threading.Thread(target=self.read_stdin, daemon=True).start()
+        self.refresh_store()
         last = time.monotonic()
         try:
             while self.running:
@@ -262,6 +351,7 @@ class Engine:
                 self.tick(now, dt)
                 time.sleep(TICK)
         finally:
+            self.mouse.close()  # undo any screen zoom
             if self.taskbar_hidden:
                 winman.set_taskbar_visible(True)
 

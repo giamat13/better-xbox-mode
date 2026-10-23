@@ -10,7 +10,11 @@ const el = (tag, cls, html) => {
 };
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-const TABS = ['Library', 'Running', 'Settings'];
+const TABS = ['Library', 'Places', 'Running', 'Settings'];
+const TAB = { LIB: 0, PLACES: 1, RUN: 2, SET: 3 };
+const PLACE_GLYPH = { site: '🌐', folder: '📁', file: '🗎' };
+const PLACE_LABEL = { site: 'Favorite site', folder: 'Folder', file: 'Recent file' };
+const QUICK_COLS = 4;
 const GAME_HINTS = /steam|epic games|gog|ubisoft|ea app|battle\.net|xbox|minecraft|game/i;
 const ZONE = { TOP: 0, RECENT: 1, TABS: 2, CARDS: 3 };
 const XLOGO = '<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#107c10" stroke="none"/><circle cx="16" cy="16" r="14" stroke="#eee" stroke-width="1.6"/><path d="M10 10l12 12M22 10L10 22" stroke="#eee" stroke-width="3"/></svg>';
@@ -18,7 +22,7 @@ const WINLOGO = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rec
 const MODES = [{ label: 'Xbox full screen experience', icon: XLOGO }, { label: 'Windows desktop', icon: WINLOGO }];
 
 const S = {
-  apps: [], cfg: {}, wins: [], view: 'home', zone: ZONE.RECENT, top: 0, recent: 0, tab: 0, card: 0,
+  apps: [], cfg: {}, wins: [], places: [], quick: null, padBattery: null, displayLabel: '', view: 'home', zone: ZONE.RECENT, top: 0, recent: 0, tab: 0, card: 0,
   filter: '', searching: false, help: false, ranked: [], sw: null,
 };
 
@@ -101,8 +105,27 @@ function relTime(secs) {
 }
 
 async function loadData() {
-  [S.cfg, S.apps] = await Promise.all([xbox.call('config_get'), xbox.call('apps')]);
+  [S.cfg, S.apps, S.places] = await Promise.all([xbox.call('config_get'), xbox.call('apps'), xbox.call('places')]);
   S.ranked = rank(S.apps);
+  applySettings();
+  xbox.displays().then((list) => { S.displayLabel = (list.find((d) => d.current) || {}).label || ''; });
+}
+
+// Settings that act on the interface itself rather than on the engine.
+function applySettings() {
+  document.body.classList.toggle('nohints', S.cfg.show_hints === false);
+  window.sfx.enable(S.cfg.ui_sounds !== false);
+}
+
+async function cycleDisplay() {
+  const list = await xbox.displays();
+  if (list.length < 2) { showModeBanner('One display', 'No other display was found', ''); return; }
+  const next = list[(list.findIndex((d) => d.current) + 1) % list.length];
+  await xbox.setDisplay(next.id);
+  S.displayLabel = next.label;
+  showModeBanner('Moved here', next.label, '');
+  renderCards();
+  updateFocus();
 }
 
 // ---- home rendering ------------------------------------------------------------------
@@ -112,6 +135,10 @@ function settingsItems() {
     { title: 'Hide taskbar', state: on(S.cfg.hide_taskbar), glyph: '▭', run: () => toggle('hide_taskbar') },
     { title: 'Controller as mouse', state: on(S.cfg.mouse_mode), glyph: '🖱', run: () => toggle('mouse_mode') },
     { title: 'Open apps full screen', state: on(S.cfg.launch_fullscreen), glyph: '⛶', run: () => toggle('launch_fullscreen') },
+    { title: 'Run as administrator', state: on(S.cfg.run_as_admin), glyph: '🛡', run: () => toggle('run_as_admin') },
+    { title: 'Display', state: S.displayLabel, glyph: '🖥', run: cycleDisplay },
+    { title: 'Interface sounds', state: on(S.cfg.ui_sounds !== false), glyph: '🔔', run: () => toggle('ui_sounds', true) },
+    { title: 'Button hints', state: on(S.cfg.show_hints !== false), glyph: '🎮', run: () => toggle('show_hints', true) },
     { title: 'Restore hidden apps', state: `${(S.cfg.hidden_apps || []).length}`, glyph: '👁',
       run: async () => {
         await xbox.call('config_set', { key: 'hidden_apps', value: [] });
@@ -124,9 +151,11 @@ function settingsItems() {
   ];
 }
 
-async function toggle(key) {
-  S.cfg[key] = !S.cfg[key];
+async function toggle(key, defaultOn = false) {
+  S.cfg[key] = !(S.cfg[key] ?? defaultOn);
   await xbox.call('config_set', { key, value: S.cfg[key] });
+  applySettings();
+  if (S.quick) renderQuick();
   renderCards();
   updateFocus();
 }
@@ -139,8 +168,9 @@ function filtered() {
 const SHELF = 12;  // the home shelf shows this many apps, then a "See all" card opens the library grid
 
 function cardCount() {
-  if (S.tab === 0) { const n = filtered().length; return Math.min(n, SHELF) + (n > SHELF ? 1 : 0); }
-  if (S.tab === 1) return S.wins.length;
+  if (S.tab === TAB.LIB) { const n = filtered().length; return Math.min(n, SHELF) + (n > SHELF ? 1 : 0); }
+  if (S.tab === TAB.PLACES) return S.places.length;
+  if (S.tab === TAB.RUN) return S.wins.length;
   return settingsItems().length;
 }
 
@@ -177,7 +207,7 @@ function artCard(label, title, state) {
 function renderCards() {
   const row = $('#cardsRow');
   row.innerHTML = '';
-  if (S.tab === 0) {
+  if (S.tab === TAB.LIB) {
     const apps = filtered();
     if (!apps.length) row.append(el('div', 'empty', S.filter ? 'No apps match your search.' : 'No apps found.'));
     apps.slice(0, SHELF).forEach((app) => {
@@ -191,7 +221,15 @@ function renderCards() {
       art.append(el('div', 'glyph', '▦'));
       row.append(card);
     }
-  } else if (S.tab === 1) {
+  } else if (S.tab === TAB.PLACES) {
+    if (!S.places.length) row.append(el('div', 'empty', 'No places found.'));
+    S.places.forEach((p) => {
+      const { card, art } = artCard(PLACE_LABEL[p.kind], p.name);
+      art.style.background = gradient(hueOf(p.kind === 'site' ? p.name : p.kind), 30);
+      art.append(el('div', 'glyph', PLACE_GLYPH[p.kind]));
+      row.append(card);
+    });
+  } else if (S.tab === TAB.RUN) {
     if (!S.wins.length) row.append(el('div', 'empty', 'Nothing is running.'));
     S.wins.forEach((w) => {
       const { card, art } = artCard('Running', w.title);
@@ -243,7 +281,9 @@ function updateFocus() {
     if (S.zone === ZONE.CARDS) centerIn($('#cardsWrap'), target, 'x');
   }
   if (S.zone === ZONE.RECENT && S.ranked[S.recent]) setBackground(S.ranked[S.recent]);
-  $('#hintA').textContent = S.zone === ZONE.CARDS && S.tab === 1 ? 'SWITCH  ·  X CLOSE' : 'SELECT';
+  const inCards = S.zone === ZONE.CARDS;
+  $('#hintA').textContent = inCards && S.tab === TAB.RUN ? 'SWITCH  ·  X CLOSE'
+    : inCards && S.tab === TAB.PLACES ? 'OPEN  ·  X REMOVE SITE' : 'SELECT';
 }
 
 // ---- home input -------------------------------------------------------------------------
@@ -266,7 +306,7 @@ document.addEventListener('scroll', () => {
 async function setTab(i) {
   S.tab = ((i % TABS.length) + TABS.length) % TABS.length;
   S.card = 0;
-  if (S.tab === 1) await refreshRunning();
+  if (S.tab === TAB.RUN) await refreshRunning();
   renderCards();
   updateFocus();
 }
@@ -283,7 +323,7 @@ async function homeButton(name) {
   if (S.help) { if (name === 'b' || name === 'a') toggleHelp(false); return; }
   if (name === 'lb') return setTab(S.tab - 1);
   if (name === 'rb') return setTab(S.tab + 1);
-  if (name === 'start') { S.zone = ZONE.TABS; return setTab(2); }
+  if (name === 'start') { S.zone = ZONE.TABS; return setTab(TAB.SET); }
   const recentMax = Math.min(3, S.ranked.length);  // index recentMax is the "view more" tile
   const cards = cardCount();
   switch (name) {
@@ -301,7 +341,15 @@ async function homeButton(name) {
     case 'b': if (S.zone > ZONE.RECENT) S.zone = ZONE.RECENT; break;
     case 'y': return startSearch();
     case 'x':
-      if (S.zone === ZONE.CARDS && S.tab === 1 && S.wins[S.card]) {
+      if (S.zone === ZONE.CARDS && S.tab === TAB.PLACES) {
+        const place = S.places[S.card];
+        if (place && place.kind === 'site') {
+          await xbox.call('favorite_remove', { url: place.path });
+          S.places = await xbox.call('places');
+          S.card = clamp(S.card, 0, Math.max(0, S.places.length - 1));
+          renderCards();
+        }
+      } else if (S.zone === ZONE.CARDS && S.tab === TAB.RUN && S.wins[S.card]) {
         markClosing(S.wins[S.card].hwnd);
         xbox.call('close', { hwnd: S.wins[S.card].hwnd });
         S.wins.splice(S.card, 1);
@@ -324,11 +372,14 @@ async function activate() {
   } else if (S.zone === ZONE.TABS) {
     S.zone = ZONE.CARDS;
     updateFocus();
-  } else if (S.tab === 0) {
+  } else if (S.tab === TAB.LIB) {
     const shown = filtered().slice(0, SHELF);
     if (S.card >= shown.length) openLibrary();
     else await launch(shown[S.card]);
-  } else if (S.tab === 1) {
+  } else if (S.tab === TAB.PLACES) {
+    const place = S.places[S.card];
+    if (place) xbox.call('open', { path: place.path });
+  } else if (S.tab === TAB.RUN) {
     const w = S.wins[S.card];
     if (w) xbox.call('focus', { hwnd: w.hwnd });
   } else {
@@ -489,6 +540,7 @@ function renderSwitcher() {
   const pitch = (47.3 + 3) * innerWidth / 100;
   car.style.transform = `translateX(${-sel * pitch}px)`;
 
+  $('#swHints').innerHTML = '<b>A</b>Switch<b>X</b>Close<b>Y</b>Controller mode<b>Menu</b>Window options<b>LB / RB</b>Move';
   const modes = $('#swModes');
   modes.innerHTML = '';
   MODES.forEach((m, i) => {
@@ -500,7 +552,9 @@ function renderSwitcher() {
 function switcherButton(name) {
   const sw = S.sw;
   const n = sw.cards.length;
+  if (sw.menu) return windowMenuButton(name);
   if (name === 'guide') return leaveSwitcher();
+  if (name === 'start') return openWindowMenu();
   if (sw.zone === 'modes') {
     if (name === 'left') sw.mode = Math.max(0, sw.mode - 1);
     else if (name === 'right') sw.mode = Math.min(MODES.length - 1, sw.mode + 1);
@@ -519,6 +573,7 @@ function switcherButton(name) {
     const card = sw.cards[sw.sel];
     xbox.call('toggle_game', { hwnd: card.hwnd }).then((game) => {
       card.game = game;
+      showModeBanner(game ? 'Game mode' : 'Mouse mode', game ? 'This app keeps the controller' : 'The controller acts as a mouse', card.title);
       $('#swCarousel').innerHTML = '';
       renderSwitcher();
     });
@@ -533,9 +588,148 @@ function switcherButton(name) {
   renderSwitcher();
 }
 
+// ---- window options (Menu in the switcher) ---------------------------------------------------
+async function openWindowMenu() {
+  const card = S.sw.cards[S.sw.sel];
+  if (!card || card.xbox) return;
+  const mons = await xbox.call('monitors');
+  const items = [['Maximize', 'maximize'], ['Minimize', 'minimize'], ['Snap to the left half', 'snap_left'],
+    ['Snap to the right half', 'snap_right']];
+  if (mons.length > 1) items.push(['Move to the next monitor', 'next_monitor']);
+  items.push(['Close', 'close']);
+  S.sw.menu = { hwnd: card.hwnd, title: card.title, items, sel: 0 };
+  renderWindowMenu();
+}
+
+function renderWindowMenu() {
+  const host = $('#swMenu');
+  const m = S.sw && S.sw.menu;
+  host.classList.toggle('hidden', !m);
+  if (!m) return;
+  host.innerHTML = '';
+  host.append(el('h3', '', esc(m.title)));
+  m.items.forEach(([label], i) => host.append(el('div', `menuitem${i === m.sel ? ' focus' : ''}`, esc(label))));
+}
+
+function windowMenuButton(name) {
+  const m = S.sw.menu;
+  if (name === 'up') m.sel = Math.max(0, m.sel - 1);
+  else if (name === 'down') m.sel = Math.min(m.items.length - 1, m.sel + 1);
+  else if (name === 'b' || name === 'start' || name === 'guide') S.sw.menu = null;
+  else if (name === 'a') {
+    const action = m.items[m.sel][1];
+    S.sw.menu = null;
+    if (action === 'close') {
+      markClosing(m.hwnd);
+      S.sw.cards = S.sw.cards.filter((c) => c.hwnd !== m.hwnd);
+      S.sw.sel = clamp(S.sw.sel, 0, S.sw.cards.length - 1);
+      $('#swCarousel').innerHTML = '';
+      renderSwitcher();
+    }
+    xbox.call('window_action', { hwnd: m.hwnd, action });
+  }
+  renderWindowMenu();
+}
+
+// ---- quick settings (hold the Xbox button) -----------------------------------------------------
+function quickItems() {
+  const on = (v) => (v ? 'On' : 'Off');
+  const system = (action) => () => xbox.call('system', { action });
+  const later = (action) => async () => {
+    closeQuick(true);
+    await new Promise((r) => setTimeout(r, 450));  // let the app we came from take the screen back first
+    xbox.call('system', { action });
+  };
+  return [
+    { title: 'Volume down', glyph: '🔉', run: system('volume_down') },
+    { title: 'Volume up', glyph: '🔊', run: system('volume_up') },
+    { title: 'Mute', glyph: '🔇', run: system('mute') },
+    { title: 'Screenshot', glyph: '📷', run: later('screenshot') },
+    { title: 'Brightness down', glyph: '🔅', state: 'built-in screens', run: system('brightness_down') },
+    { title: 'Brightness up', glyph: '🔆', state: 'built-in screens', run: system('brightness_up') },
+    { title: 'Wi-Fi', glyph: '📶', run: later('wifi') },
+    { title: 'Bluetooth', glyph: '🎧', run: later('bluetooth') },
+    { title: 'Display settings', glyph: '🖥', run: later('display') },
+    { title: 'Move this UI to another display', glyph: '⇄', run: cycleDisplay },
+    { title: 'Interface sounds', glyph: '🔔', state: on(S.cfg.ui_sounds !== false), run: () => toggle('ui_sounds', true) },
+    { title: 'Button hints', glyph: '🎮', state: on(S.cfg.show_hints !== false), run: () => toggle('show_hints', true) },
+    { title: 'Lock', glyph: '🔒', run: later('lock') },
+    { title: 'Sleep', glyph: '🌙', danger: true, run: later('sleep') },
+    { title: 'Restart', glyph: '↻', danger: true, run: later('restart') },
+    { title: 'Shut down', glyph: '⏻', danger: true, run: later('shutdown') },
+  ];
+}
+
+function openQuick(prev) {
+  S.quick = { sel: 0, prev, confirm: false };
+  $('#quick').classList.remove('hidden');
+  renderQuick();
+  xbox.focusUi();
+}
+
+function closeQuick(restore) {
+  const prev = S.quick && S.quick.prev;
+  S.quick = null;
+  $('#quick').classList.add('hidden');
+  if (restore && prev) xbox.call('focus', { hwnd: prev });
+}
+
+const BATTERY_TEXT = { empty: 'almost empty', low: 'low', medium: 'medium', full: 'full' };
+
+function renderQuick() {
+  const q = S.quick;
+  if (!q) return;
+  const items = quickItems();
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  $('#quickInfo').textContent = `${time}${S.padBattery ? `  ·  Controller battery ${BATTERY_TEXT[S.padBattery]}` : ''}`;
+  const grid = $('#quickGrid');
+  grid.innerHTML = '';
+  items.forEach((it, i) => {
+    const focus = i === q.sel;
+    const state = focus && q.confirm ? 'Press A again to confirm' : it.state || '';
+    grid.append(el('div', `qitem${focus ? ' focus' : ''}${it.danger ? ' danger' : ''}`,
+      `<div class="glyph">${it.glyph}</div><div>${esc(it.title)}</div>${state ? `<div class="state">${esc(state)}</div>` : ''}`));
+  });
+  $('#quickHints').innerHTML = '<b>A</b>Select<b>B</b>Close<b>D-pad</b>Move';
+}
+
+function quickButton(name) {
+  const q = S.quick;
+  const items = quickItems();
+  const step = { left: -1, right: 1, up: -QUICK_COLS, down: QUICK_COLS }[name];
+  if (step !== undefined) {
+    q.sel = clamp(q.sel + step, 0, items.length - 1);
+    q.confirm = false;
+  } else if (name === 'a') {
+    const item = items[q.sel];
+    if (item.danger && !q.confirm) q.confirm = true;  // shutting down is never one press away
+    else { q.confirm = false; item.run(); }
+  } else if (name === 'b' || name === 'guide' || name === 'start') {
+    return closeQuick(true);
+  }
+  renderQuick();
+}
+
+// ---- controller battery ------------------------------------------------------------------------
+const BATTERY_WIDTH = { empty: 2, low: 5, medium: 11, full: 17 };
+
+function showPadBattery(level) {
+  S.padBattery = level;
+  document.querySelectorAll('.padbatt').forEach((svg) => {
+    svg.classList.toggle('hidden', !level);
+    svg.classList.toggle('low', level === 'low');
+    svg.classList.toggle('empty', level === 'empty');
+    svg.querySelector('.padfill').setAttribute('width', String(BATTERY_WIDTH[level] || 0));
+  });
+}
+
 // ---- input routing ----------------------------------------------------------------------------
+const CUES = { up: 'move', down: 'move', left: 'move', right: 'move', lb: 'move', rb: 'move', a: 'select', b: 'back' };
+
 function onButton(name) {
   if (S.searching) return;  // the keyboard window owns input while searching
+  window.sfx.play(CUES[name] || (name === 'guide' ? 'open' : ''));
+  if (S.quick) return quickButton(name);
   if (S.view === 'switcher') switcherButton(name);
   else if (name === 'guide') openSwitcher(0);
   else if (S.view === 'library') libraryButton(name);
@@ -543,8 +737,18 @@ function onButton(name) {
 }
 
 xbox.on('btn', onButton);
-xbox.on('guide', () => (S.view === 'switcher' ? leaveSwitcher() : openSwitcher(0)));
-xbox.on('open-switcher', ({ prev }) => openSwitcher(prev));
+xbox.on('guide', () => {
+  if (S.quick) closeQuick(true);
+  else if (S.view === 'switcher') leaveSwitcher();
+  else openSwitcher(0);
+});
+xbox.on('open-switcher', ({ prev }) => { if (S.quick) closeQuick(false); openSwitcher(prev); });
+xbox.on('open-quick', ({ prev }) => { if (S.quick) closeQuick(true); else { window.sfx.play('open'); openQuick(prev); } });
+xbox.on('battery', showPadBattery);
+xbox.on('apps-changed', async () => {
+  await loadData();
+  if (S.view === 'library') renderLibrary(); else renderHome();
+});
 xbox.on('kb-closed', endSearch);
 
 const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'a', Escape: 'b',
@@ -603,7 +807,7 @@ function applyWindows(wins, thumbs) {
 }
 
 async function pollWindows() {
-  const watching = S.view === 'switcher' || (S.view === 'home' && S.tab === 1);
+  const watching = S.view === 'switcher' || (S.view === 'home' && S.tab === TAB.RUN);
   if (!watching || polling || !S.sw && S.view === 'switcher') return;
   polling = true;
   try {
@@ -633,6 +837,7 @@ if (navigator.getBattery) {
 }
 
 (async () => {
+  xbox.padState().then((state) => showPadBattery(state.battery));
   tickClock();
   setInterval(tickClock, 10000);
   setInterval(pollWindows, 1000);
@@ -640,9 +845,24 @@ if (navigator.getBattery) {
   renderHome();
   const view = new URLSearchParams(location.search).get('view');
   if (view === 'switcher') openSwitcher(0);
-  else if (view === 'running') { S.zone = ZONE.CARDS; await setTab(1); }
-  else if (view === 'settings') { S.zone = ZONE.CARDS; await setTab(2); }
+  else if (view === 'places') { S.zone = ZONE.CARDS; await setTab(TAB.PLACES); }
+  else if (view === 'running') { S.zone = ZONE.CARDS; await setTab(TAB.RUN); }
+  else if (view === 'settings') { S.zone = ZONE.CARDS; await setTab(TAB.SET); }
+  else if (view === 'quick') openQuick(0);
+  else if (view === 'menu') { await openSwitcher(0); S.sw.sel = Math.min(1, S.sw.cards.length - 1); openWindowMenu(); }
   else if (view === 'help') toggleHelp(true);
   else if (view === 'library') openLibrary();
 })();
 })();
+
+// A big, brief notice so a controller-mode flip in the switcher is impossible to miss.
+let modeBannerTimer = 0;
+function showModeBanner(title, sub, app) {
+  document.getElementById('modeBanner')?.remove();
+  const b = el('div', 'modeBanner');
+  b.id = 'modeBanner';
+  b.append(el('div', 'mbTitle', title), el('div', 'mbSub', sub), el('div', 'mbApp', app || ''));
+  document.body.appendChild(b);
+  clearTimeout(modeBannerTimer);
+  modeBannerTimer = setTimeout(() => b.remove(), 1800);
+}

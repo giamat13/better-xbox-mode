@@ -17,6 +17,7 @@
       <span id="searchLabel">Search &nbsp;·&nbsp; Y</span>
       <div id="status">
         <svg viewBox="0 0 24 24" class="stat"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3.5 3.5 3.5 14.500 0 18M12 3c-3.500 3.500-3.500 14.500 0 18"/></svg>
+        <svg viewBox="0 0 28 24" class="stat padbatt hidden"><rect x="2" y="7" width="21" height="10" rx="2"/><path d="M25 10v4"/><rect class="padfill" x="4" y="9" width="17" height="6" fill="currentColor" stroke="none"/></svg>
         <span id="clock"></span>
         <button id="helpBtn" class="topbtn" aria-label="Help">?</button>
       </div>
@@ -59,13 +60,24 @@
       <div id="swStatus">
         <svg viewBox="0 0 24 24" class="stat"><path d="M2 9a15 15 0 0 1 20 0M5 12.500a10.500 10.500 0 0 1 14 0M8.500 16a5.500 5.500 0 0 1 7 0"/><circle cx="12" cy="19.500" r="1" fill="currentColor"/></svg>
         <svg viewBox="0 0 24 24" class="stat"><path d="M3 9h4l5-4v14l-5-4H3z"/><path d="M16 9a4 4 0 0 1 0 6M18.500 6.500a8 8 0 0 1 0 11"/></svg>
+        <svg viewBox="0 0 28 24" class="stat padbatt hidden"><rect x="2" y="7" width="21" height="10" rx="2"/><path d="M25 10v4"/><rect class="padfill" x="4" y="9" width="17" height="6" fill="currentColor" stroke="none"/></svg>
         <svg viewBox="0 0 28 24" class="stat batt"><rect x="2" y="7" width="21" height="10" rx="2"/><path d="M25 10v4"/><rect id="swBattFill" x="4" y="9" width="17" height="6" fill="currentColor" stroke="none"/></svg>
         <span id="swClock"></span>
       </div>
     </div>
     <div id="swViewport"><div id="swCarousel"></div></div>
+    <div id="swHints" class="hintline"></div>
     <div id="swModes"></div>
+    <div id="swMenu" class="hidden"></div>
   </section>
+
+  <div id="quick" class="hidden">
+    <div class="panel">
+      <header><h3>Quick settings</h3><span id="quickInfo"></span></header>
+      <div id="quickGrid"></div>
+      <div class="hintline" id="quickHints"></div>
+    </div>
+  </div>
 
   <div id="help" class="hidden">
     <div class="panel">
@@ -79,13 +91,18 @@
         <li><b>Y</b> On-screen keyboard (desktop)</li>
         <li><b>LB / RB</b> Switch tab</li>
         <li><b>Menu</b> Settings</li>
-        <li><b>Right stick</b> Scroll</li>
+        <li><b>Right stick</b> Scroll &nbsp;·&nbsp; sideways scrolls horizontally &nbsp;·&nbsp; click it to jump to the other monitor</li>
+        <li><b>LB (desktop)</b> Copy, then open the clipboard history</li>
+        <li><b>LT / RT (desktop)</b> Zoom the screen out / in &nbsp;·&nbsp; both resets</li>
+        <li><b>Hold Xbox button</b> Quick settings</li>
+        <li><b>Menu in the switcher</b> Window options: maximize, snap, move to another monitor</li>
         <li><b>Y in the switcher</b> Controller mode of that app: game (it keeps the controller) or mouse</li>
       </ul>
       <p>Press B to close</p>
     </div>
   </div>
 
+  <script src="sound.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

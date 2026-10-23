@@ -26,6 +26,79 @@ class IsolatedConfig(unittest.TestCase):
         self.addCleanup(patch.stop)
 
 
+class FakeMagnification:
+    def __init__(self):
+        self.calls = []
+
+    def MagInitialize(self):
+        self.calls.append(("init",))
+
+    def MagUninitialize(self):
+        self.calls.append(("uninit",))
+
+    def MagSetFullscreenTransform(self, level, x, y):
+        self.calls.append(("set", round(level, 2), x, y))
+
+
+class ZoomTests(unittest.TestCase):
+    """In mouse mode RT zooms the whole screen in and LT zooms it out through the Magnification API (no window)."""
+
+    def setUp(self):
+        from xbox_mode import mouse
+        self.api = FakeMagnification()
+        self.cursor = (960, 540)
+        self.mag = mouse.Magnifier(api=self.api, screen=lambda: (1920, 1080), cursor=lambda: self.cursor)
+        self.mouse = mouse.MouseMode()
+        self.mouse.mag = self.mag
+
+    def pull(self, lt, rt, seconds, dt=0.01):
+        for _ in range(round(seconds / dt)):
+            self.mouse._zoom(SimpleNamespace(lt=lt, rt=rt), dt)
+
+    def test_right_trigger_zooms_in_around_the_cursor(self):
+        self.pull(0.0, 1.0, 0.5)
+        self.assertGreater(self.mag.level, 1.5)
+        self.assertEqual(self.api.calls[0], ("init",))
+        _, level, x, y = self.api.calls[-1]
+        self.assertGreater(x, 0)  # the view is a window onto the middle of the screen
+        self.assertGreater(y, 0)
+
+    def test_zoom_is_capped(self):
+        self.pull(0.0, 1.0, 5.0)
+        self.assertEqual(self.mag.level, 10.0)
+
+    def test_left_trigger_zooms_back_out_and_shuts_the_api_down_at_normal_size(self):
+        self.pull(0.0, 1.0, 0.5)
+        self.pull(1.0, 0.0, 2.0)
+        self.assertEqual(self.mag.level, 1.0)
+        self.assertEqual(self.api.calls[-2:], [("set", 1.0, 0, 0), ("uninit",)])
+
+    def test_zooming_out_at_normal_size_does_nothing(self):
+        self.pull(1.0, 0.0, 0.5)
+        self.assertEqual(self.api.calls, [])
+
+    def test_both_triggers_reset_at_once(self):
+        self.pull(0.0, 1.0, 0.5)
+        self.pull(1.0, 1.0, 0.02)
+        self.assertEqual((self.mag.level, self.api.calls[-1]), (1.0, ("uninit",)))
+
+    def test_light_pull_does_nothing(self):
+        self.pull(0.0, 0.3, 0.5)
+        self.assertEqual(self.api.calls, [])
+
+    def test_view_follows_the_cursor_to_an_edge(self):
+        self.pull(0.0, 1.0, 1.0)
+        self.cursor = (1900, 1060)
+        self.mouse._zoom(SimpleNamespace(lt=0.0, rt=0.0), 0.01)
+        _, level, x, y = self.api.calls[-1]
+        self.assertEqual((x, y), (int(1920 - 1920 / level), int(1080 - 1080 / level)))
+
+    def test_close_restores_the_screen(self):
+        self.pull(0.0, 1.0, 0.5)
+        self.mouse.close()
+        self.assertEqual(self.api.calls[-1], ("uninit",))
+
+
 class PadTests(unittest.TestCase):
     def pad_with(self, frames):
         pad = Pad()

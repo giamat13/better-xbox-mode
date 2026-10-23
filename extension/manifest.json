@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Xbox Mode Companion",
+  "version": "0.2.0",
+  "description": "A controller-first YouTube interface, shown only while Xbox Mode is running.",
+  "background": { "service_worker": "background.js" },
+  "host_permissions": ["http://127.0.0.1:47821/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "css": ["youtube.css"],
+      "js": ["youtube.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+/* YouTube keeps its own look. These rules only add a clear focus ring, and only while Xbox Mode is running. */
+html.xbox-yt-active [data-xb-focus] {
+  outline: 4px solid #107c10 !important;
+  outline-offset: 3px !important;
+  border-radius: 10px;
+  box-shadow: 0 0 0 8px rgba(16, 124, 16, 0.35) !important;
+}
+
+#xb-hints {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  padding: 12px 24px;
+  border-radius: 999px;
+  background: rgba(11, 13, 18, 0.92);
+  color: #fff;
+  font: 600 18px "Segoe UI", system-ui, sans-serif;
+  pointer-events: none;
+  white-space: nowrap;
+}

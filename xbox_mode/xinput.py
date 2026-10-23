@@ -27,12 +27,28 @@ class _State(ctypes.Structure):
     _fields_ = [("dwPacketNumber", wt.DWORD), ("Gamepad", _Gamepad)]
 
 
+class _Battery(ctypes.Structure):
+    _fields_ = [("BatteryType", ctypes.c_ubyte), ("BatteryLevel", ctypes.c_ubyte)]
+
+
+BATTERY_WIRED, BATTERY_EMPTY, BATTERY_LOW = 1, 0, 1
+BATTERY_CHECK_SECONDS = 30.0
+
+
 def _load_getter():
+    """Returns (state getter, battery getter); either may be None."""
     for name in ("xinput1_4", "xinput1_3", "xinput9_1_0"):
         try:
             dll = ctypes.WinDLL(name)
         except OSError:
             continue
+        battery = None
+        try:
+            battery = dll.XInputGetBatteryInformation
+            battery.argtypes = [wt.DWORD, ctypes.c_ubyte, ctypes.POINTER(_Battery)]
+            battery.restype = wt.DWORD
+        except AttributeError:
+            battery = None
         # Ordinal 100 is XInputGetStateEx, the only variant that reports the Guide button.
         for key in (100, "XInputGetState"):
             try:
@@ -41,14 +57,16 @@ def _load_getter():
                 continue
             fn.argtypes = [wt.DWORD, ctypes.POINTER(_State)]
             fn.restype = wt.DWORD
-            return fn
-    return None
+            return fn, battery
+    return None, None
 
 
 class Pad:
     def __init__(self):
-        self._get = _load_getter()
+        self._get, self._get_battery = _load_getter()
         self.connected = False
+        self.battery = None  # None (unknown or wired), or "empty", "low", "medium", "full"
+        self._next_battery = 0.0
         self.stick_nav = True  # left stick also produces direction events (off while it drives the mouse)
         self.held = set()
         self.pressed = set()
@@ -77,9 +95,24 @@ class Pad:
                 return state.Gamepad
         return None
 
+    def _read_battery(self, now):
+        """The pad's battery level, checked every so often. None for wired pads and when it cannot be read."""
+        if now < self._next_battery:
+            return
+        self._next_battery = now + BATTERY_CHECK_SECONDS
+        if not (self._get_battery and self.connected):
+            self.battery = None
+            return
+        info = _Battery()
+        if self._get_battery(self._slot, 0, ctypes.byref(info)) != 0 or info.BatteryType == BATTERY_WIRED                 or info.BatteryType == 0:
+            self.battery = None
+            return
+        self.battery = ("empty", "low", "medium", "full")[min(info.BatteryLevel, 3)]
+
     def update(self, now):
         gp = self._read()
         self.connected = gp is not None
+        self._read_battery(now)
         bits = gp.wButtons if gp else 0
         held = {n for n, b in BUTTON_BITS.items() if bits & b}
         if gp:
