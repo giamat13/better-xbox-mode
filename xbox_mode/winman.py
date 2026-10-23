@@ -7,6 +7,9 @@ from dataclasses import dataclass
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 dwmapi = ctypes.windll.dwmapi
+psapi = ctypes.windll.psapi
+psapi.EnumProcessModulesEx.argtypes = [wt.HANDLE, ctypes.POINTER(wt.HMODULE), wt.DWORD, ctypes.POINTER(wt.DWORD), wt.DWORD]
+psapi.GetModuleBaseNameW.argtypes = [wt.HANDLE, wt.HMODULE, wt.LPWSTR, wt.DWORD]
 
 user32.GetForegroundWindow.restype = wt.HWND
 user32.SetForegroundWindow.argtypes = [wt.HWND]
@@ -58,6 +61,32 @@ def exe_path(hwnd):
     finally:
         kernel32.CloseHandle(h)
     return ""
+
+
+def pid_of(hwnd):
+    pid = wt.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return pid.value
+
+
+def module_names(pid):
+    """Lower-cased names of the DLLs loaded in a process, or None when it cannot be inspected."""
+    h = kernel32.OpenProcess(0x1000 | 0x0010, False, pid)  # QUERY_LIMITED_INFORMATION | VM_READ
+    if not h:
+        return None
+    try:
+        modules = (wt.HMODULE * 1024)()
+        needed = wt.DWORD()
+        if not psapi.EnumProcessModulesEx(h, modules, ctypes.sizeof(modules), ctypes.byref(needed), 3):  # LIST_MODULES_ALL
+            return None
+        name = ctypes.create_unicode_buffer(260)
+        found = set()
+        for i in range(min(needed.value // ctypes.sizeof(wt.HMODULE), len(modules))):
+            if psapi.GetModuleBaseNameW(h, modules[i], name, 260):
+                found.add(name.value.lower())
+        return found
+    finally:
+        kernel32.CloseHandle(h)
 
 
 def exe_name(hwnd):

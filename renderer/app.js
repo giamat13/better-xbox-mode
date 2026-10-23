@@ -213,10 +213,20 @@ function renderCards() {
   }
 }
 
+function mergeWindows(wins, thumbs) {
+  const byHwnd = new Map(thumbs.map((t) => [t.hwnd, t]));
+  return wins.map((w) => ({ ...w, thumb: byHwnd.get(w.hwnd)?.thumb || null, icon: byHwnd.get(w.hwnd)?.icon || null }));
+}
+
 async function refreshRunning() {
   const [wins, thumbs] = await Promise.all([xbox.call('windows'), xbox.thumbs({ w: 640, h: 360 })]);
-  const byHwnd = new Map(thumbs.map((t) => [t.hwnd, t]));
-  S.wins = wins.map((w) => ({ ...w, thumb: byHwnd.get(w.hwnd)?.thumb || null, icon: byHwnd.get(w.hwnd)?.icon || null }));
+  S.wins = mergeWindows(wins, thumbs);
+}
+
+// A window we just asked to close can linger for a moment; keep it out of the lists meanwhile.
+const closing = new Map();
+function markClosing(hwnd) {
+  closing.set(hwnd, Date.now() + 3000);
 }
 
 function updateFocus() {
@@ -276,6 +286,7 @@ async function homeButton(name) {
     case 'y': return startSearch();
     case 'x':
       if (S.zone === ZONE.CARDS && S.tab === 1 && S.wins[S.card]) {
+        markClosing(S.wins[S.card].hwnd);
         xbox.call('close', { hwnd: S.wins[S.card].hwnd });
         S.wins.splice(S.card, 1);
         S.card = clamp(S.card, 0, Math.max(0, S.wins.length - 1));
@@ -486,6 +497,7 @@ function switcherButton(name) {
     if (c.xbox) return closeSwitcher();
     xbox.call('focus', { hwnd: c.hwnd });
   } else if (name === 'x' && !sw.cards[sw.sel].xbox) {
+    markClosing(sw.cards[sw.sel].hwnd);
     xbox.call('close', { hwnd: sw.cards[sw.sel].hwnd });
     sw.cards.splice(sw.sel, 1);
     sw.sel = Math.min(sw.sel, sw.cards.length - 1);
@@ -538,6 +550,47 @@ function onFilterInput(ev) {
 $('#libSearch').addEventListener('input', onFilterInput);
 
 // ---- boot ---------------------------------------------------------------------------------------
+// ---- live window list -------------------------------------------------------------------------
+// While the switcher or the Running tab is on screen, notice windows opening and closing (also ones closed from
+// elsewhere), and refresh thumbnails every few seconds.
+let windowSignature = '';
+let thumbsAt = 0;
+let polling = false;
+
+function applyWindows(wins, thumbs) {
+  const merged = mergeWindows(wins, thumbs).filter((w) => !(closing.get(w.hwnd) > Date.now()));
+  if (S.view === 'switcher') {
+    const sw = S.sw;
+    const keep = sw.cards[sw.sel]?.hwnd;
+    sw.cards = [sw.cards[0], ...merged.map((w) => ({ hwnd: w.hwnd, title: w.title, thumb: w.thumb, icon: w.icon, path: w.path }))];
+    const at = keep ? sw.cards.findIndex((c) => c.hwnd === keep) : -1;
+    sw.sel = at >= 0 ? at : clamp(sw.sel, 0, sw.cards.length - 1);
+    $('#swCarousel').innerHTML = '';
+    renderSwitcher();
+  } else {
+    S.wins = merged;
+    S.card = clamp(S.card, 0, Math.max(0, S.wins.length - 1));
+    renderCards();
+    updateFocus();
+  }
+}
+
+async function pollWindows() {
+  const watching = S.view === 'switcher' || (S.view === 'home' && S.tab === 1);
+  if (!watching || polling || !S.sw && S.view === 'switcher') return;
+  polling = true;
+  try {
+    const wins = await xbox.call('windows');
+    const signature = wins.map((w) => `${w.hwnd}:${w.title}`).join('|');
+    if (signature === windowSignature && Date.now() - thumbsAt < 5000) return;
+    windowSignature = signature;
+    thumbsAt = Date.now();
+    applyWindows(wins, await xbox.thumbs({ w: 640, h: 360 }));
+  } finally {
+    polling = false;
+  }
+}
+
 function tickClock() {
   const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   $('#clock').textContent = t;
@@ -555,6 +608,7 @@ if (navigator.getBattery) {
 (async () => {
   tickClock();
   setInterval(tickClock, 10000);
+  setInterval(pollWindows, 1000);
   await loadData();
   renderHome();
   const view = new URLSearchParams(location.search).get('view');

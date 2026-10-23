@@ -5,7 +5,9 @@ UI -> engine: {"id": n, "cmd": "...", ...args}   engine -> UI: {"t": "res", "id"
 Engine events: {"t": "btn", "name", "target": "ui"|"kb"}, {"t": "guide"}, {"t": "toggle_kb"}, {"t": "pad", "connected"}
 
 Outside the Xbox UI the left stick drives the mouse, except in "game" windows, which keep the controller to
-themselves: exclusive full-screen Direct3D apps, plus any app you flag with Back+Start (a beep confirms).
+themselves. A game is a window that covers the screen and belongs to a process that reads the controller (it has
+loaded XInput, DirectInput, SDL or GameInput) or runs exclusive Direct3D full screen. Back+Start flips the current
+app between game and mouse (a beep confirms) and the choice is remembered.
 """
 import ctypes
 import json
@@ -27,6 +29,9 @@ STEAM_GUARD_SECONDS = 4  # after Guide, how long a Steam window that takes the s
 STEAM_EXES = {"steam.exe", "steamwebhelper.exe"}
 WINDOWLESS_AFTER = 2  # launches in a row that showed no window before an app is hidden
 D3D_EXCLUSIVE = 3  # QUNS_RUNNING_D3D_FULL_SCREEN
+AWARE_RECHECK_SECONDS = 2.0
+GAMEPAD_DLLS = {"xinput1_1.dll", "xinput1_2.dll", "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll", "dinput.dll",
+                "dinput8.dll", "sdl2.dll", "sdl3.dll", "gameinput.dll", "windows.gaming.input.dll"}
 shell32 = ctypes.windll.shell32
 
 
@@ -45,6 +50,7 @@ class Engine:
         self.next_watch = 0.0
         self.exclusive = False
         self.next_exclusive_check = 0.0
+        self.aware = {}  # pid -> (checked at, whether the process reads the controller)
         self.guard_until = 0.0
         self.next_guard = 0.0
 
@@ -116,12 +122,27 @@ class Engine:
 
     # ---- policy --------------------------------------------------------
     def is_game(self, fg, now):
-        if winman.exe_name(fg).lower() in {a.lower() for a in self.cfg["game_apps"]}:
-            return True
-        # The shell reports an exclusive full-screen app even while a small pop-up sits in front of it, so the
-        # pop-up must not inherit "game" status: only the window that actually covers the screen counts.
-        if not winman.covers_screen(fg):
+        exe = winman.exe_name(fg).lower()
+        if exe in {a.lower() for a in self.cfg["mouse_apps"]}:
             return False
+        if exe in {a.lower() for a in self.cfg["game_apps"]}:
+            return True
+        # Only the window that covers the screen can be a game; a pop-up in front of one must keep the mouse.
+        return winman.covers_screen(fg) and self.reads_controller(fg, now)
+
+    def reads_controller(self, fg, now):
+        pid = winman.pid_of(fg)
+        cached = self.aware.get(pid)
+        if cached and now - cached[0] < AWARE_RECHECK_SECONDS:
+            return cached[1]
+        modules = winman.module_names(pid)
+        aware = bool(modules and modules & GAMEPAD_DLLS) or self.exclusive_fullscreen(now)
+        if len(self.aware) > 64:
+            self.aware.clear()
+        self.aware[pid] = (now, aware)
+        return aware
+
+    def exclusive_fullscreen(self, now):
         if now >= self.next_exclusive_check:
             state = ctypes.c_int(0)
             if shell32.SHQueryUserNotificationState(ctypes.byref(state)) == 0:
@@ -129,18 +150,18 @@ class Engine:
             self.next_exclusive_check = now + 0.5
         return self.exclusive
 
-    def toggle_game(self, fg):
+    def toggle_game(self, fg, now):
+        """Flips the current app between "game" (keeps the controller) and "mouse" and remembers the choice."""
         exe = winman.exe_name(fg)
         if not exe:
             return
-        games = self.cfg["game_apps"]
-        match = next((g for g in games if g.lower() == exe.lower()), None)
-        if match:
-            games.remove(match)
-        else:
-            games.append(exe)
+        make_game = not self.is_game(fg, now)
+        for key in ("game_apps", "mouse_apps"):
+            self.cfg[key] = [a for a in self.cfg[key] if a.lower() != exe.lower()]
+        self.cfg["game_apps" if make_game else "mouse_apps"].append(exe)
+        self.aware.clear()
         appmod.save_config(self.cfg)
-        threading.Thread(target=winsound.Beep, args=(440 if match else 880, 140), daemon=True).start()
+        threading.Thread(target=winsound.Beep, args=(880 if make_game else 440, 140), daemon=True).start()
 
     def reclaim_from_steam(self, fg):
         """Steam listens to the Guide button too and raises its own window over us.
@@ -206,7 +227,7 @@ class Engine:
                 if name != "guide":
                     self.emit({"t": "btn", "name": name, "target": target})
         elif chord:
-            self.toggle_game(fg)
+            self.toggle_game(fg, now)
         elif self.cfg["mouse_mode"] and not self.is_game(fg, now):
             if "y" in pad.pressed:
                 self.emit({"t": "toggle_kb"})

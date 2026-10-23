@@ -64,6 +64,54 @@ class PadTests(unittest.TestCase):
         self.assertIn("guide", pad.pressed)
 
 
+class GameDetectionTests(unittest.TestCase):
+    def make(self, exe="game.exe", covers=True, modules=frozenset(), exclusive=False, **cfg):
+        engine = Engine()
+        engine.cfg.update({"game_apps": [], "mouse_apps": [], **cfg})
+        engine.exclusive = exclusive
+        engine.next_exclusive_check = 10 ** 9  # never ask the shell during a test
+        patches = [mock.patch.object(winman, "exe_name", return_value=exe),
+                   mock.patch.object(winman, "covers_screen", return_value=covers),
+                   mock.patch.object(winman, "pid_of", return_value=1),
+                   mock.patch.object(winman, "module_names", return_value=modules)]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        return engine
+
+    def test_full_screen_app_that_loaded_xinput_keeps_the_controller(self):
+        self.assertTrue(self.make(modules={"xinput1_4.dll", "kernel32.dll"}).is_game(99, 0.0))
+
+    def test_full_screen_app_without_a_gamepad_library_gets_the_mouse(self):
+        self.assertFalse(self.make(modules={"kernel32.dll", "user32.dll"}).is_game(99, 0.0))
+
+    def test_windowed_or_pop_up_window_gets_the_mouse_even_in_a_game_process(self):
+        self.assertFalse(self.make(covers=False, modules={"xinput1_4.dll"}).is_game(99, 0.0))
+
+    def test_exclusive_direct3d_full_screen_is_a_game(self):
+        self.assertTrue(self.make(exclusive=True).is_game(99, 0.0))
+
+    def test_process_that_cannot_be_inspected_is_not_assumed_to_be_a_game(self):
+        self.assertFalse(self.make(modules=None).is_game(99, 0.0))
+
+    def test_overrides_beat_detection(self):
+        self.assertFalse(self.make(exe="Steam.exe", modules={"xinput1_4.dll"}, mouse_apps=["steam.exe"]).is_game(99, 0.0))
+        self.assertTrue(self.make(exe="Odd.exe", covers=False, game_apps=["odd.exe"]).is_game(99, 0.0))
+
+    def test_default_config_keeps_launchers_on_the_mouse(self):
+        self.assertIn("steam.exe", apps.load_config()["mouse_apps"])
+
+    def test_toggle_flips_between_game_and_mouse_and_remembers(self):
+        engine = self.make(exe="Some.exe", modules={"xinput1_4.dll"})
+        with mock.patch.object(apps, "save_config"), mock.patch("xbox_mode.engine.winsound.Beep"):
+            engine.toggle_game(99, 0.0)  # detected as a game, so it becomes a mouse app
+            self.assertEqual((engine.cfg["mouse_apps"], engine.cfg["game_apps"]), (["Some.exe"], []))
+            self.assertFalse(engine.is_game(99, 1.0))
+            engine.toggle_game(99, 1.0)
+            self.assertEqual((engine.cfg["mouse_apps"], engine.cfg["game_apps"]), ([], ["Some.exe"]))
+            self.assertTrue(engine.is_game(99, 2.0))
+
+
 class SteamGuardTests(unittest.TestCase):
     def run_guard(self, exe, launching=False):
         engine = Engine()
