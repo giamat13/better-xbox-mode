@@ -3,22 +3,20 @@
   "configurations": [
     {
       "name": "Xbox Mode",
-      "type": "debugpy",
+      "type": "node",
       "request": "launch",
-      "python": "C:\\Users\\furst\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-      "module": "xbox_mode",
-      "console": "integratedTerminal",
-      "justMyCode": true
+      "program": "${workspaceFolder}/scripts/start.js",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
     },
     {
       "name": "Xbox Mode (windowed)",
-      "type": "debugpy",
+      "type": "node",
       "request": "launch",
-      "python": "C:\\Users\\furst\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-      "module": "xbox_mode",
+      "program": "${workspaceFolder}/scripts/start.js",
       "args": ["--windowed"],
-      "console": "integratedTerminal",
-      "justMyCode": true
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
     }
   ]
 }

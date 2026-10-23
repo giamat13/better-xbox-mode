@@ -1,200 +1,225 @@
-"""Turns one controller snapshot into mouse, keyboard, launcher and on-screen keyboard actions."""
-import logging
-from typing import Any, Callable, Dict, Optional, Tuple
+"""System layer for Xbox Mode. No UI: it owns the gamepad, windows, apps and input injection,
+and talks to the Electron UI with newline-delimited JSON over stdin/stdout.
 
-from .bindings import DEFAULT_BINDINGS, DPAD_KEYS, TOGGLE_CHORD
-from .controller import ControllerState
-from .launcher import Launcher
-from .keyboard_model import Key, OnScreenKeyboard
-from .launcher_apps import App
-from .mapping import ButtonEdges, ChordTimer, shape_stick
-from .outputs import DpadRepeater, KeyboardOutput, KEY_NAMES, MOUSE_BUTTONS, MouseOutput
-from .policy import EmulationPolicy, PageReport
-from .switcher import TaskSwitcher
+UI -> engine: {"id": n, "cmd": "...", ...args}   engine -> UI: {"t": "res", "id": n, "data": ...}
+Engine events: {"t": "btn", "name", "target": "ui"|"kb"}, {"t": "guide"}, {"t": "toggle_kb"}, {"t": "pad", "connected"}
 
-log = logging.getLogger(__name__)
+Outside the Xbox UI the left stick drives the mouse, except in "game" windows, which keep the controller to
+themselves: exclusive full-screen Direct3D apps, plus any app you flag with Back+Start (a beep confirms).
+"""
+import ctypes
+import json
+import queue
+import sys
+import threading
+import time
+import winsound
 
-GATE_INTERVAL = 0.25
-MAX_STEP_SECONDS = 0.1
-ACTION_KINDS = ("mouse", "key", "osk", "launcher")
+from . import apps as appmod
+from . import winman
+from .mouse import MouseMode
+from .sendinput import send_text, send_vk
+from .xinput import Pad
 
-
-def _check_binding(button: str, action: str) -> None:
-    kind, _, value = action.partition(":")
-    if kind not in ACTION_KINDS:
-        raise ValueError(f"bindings[{button!r}]: unknown action {action!r}")
-    if kind == "mouse" and value not in MOUSE_BUTTONS:
-        raise ValueError(f"bindings[{button!r}]: unknown mouse button {value!r}")
-    if kind == "key" and value not in KEY_NAMES:
-        raise ValueError(f"bindings[{button!r}]: unknown key {value!r}")
+TICK = 1 / 125
+WATCH_SECONDS = 45
+WINDOWLESS_AFTER = 2  # launches in a row that showed no window before an app is hidden
+D3D_EXCLUSIVE = 3  # QUNS_RUNNING_D3D_FULL_SCREEN
+shell32 = ctypes.windll.shell32
 
 
 class Engine:
-    def __init__(
-        self,
-        config: Dict[str, Any],
-        mouse: MouseOutput,
-        keyboard: KeyboardOutput,
-        launcher: Launcher,
-        policy: EmulationPolicy,
-        foreground: Callable[[], Tuple[Optional[int], Optional[str]]],
-        uses_gamepad: Callable[[Optional[int], float], bool],
-        heartbeat: Callable[[], Optional[PageReport]],
-        toggle_osk: Callable[[], None],
-        launch_app: Callable[[App], None],
-        on_screen: Optional[OnScreenKeyboard] = None,
-        type_text: Optional[Callable[[str], None]] = None,
-        switcher: Optional[TaskSwitcher] = None,
-    ) -> None:
-        self.enabled = True
-        self.launcher = launcher
-        self._on_screen = on_screen
-        self._switcher = switcher
-        self._type_text = type_text or (lambda value: None)
-        self._deadzone = config["deadzone"]
-        self._exponent = config["stick_exponent"]
-        self._mouse_speed = config["mouse_speed"]
-        self._scroll_speed = config["scroll_speed"]
-        self._bindings = {**DEFAULT_BINDINGS, **config["bindings"]}
-        for button, action in self._bindings.items():
-            _check_binding(button, action)
-        self._mouse = mouse
-        self._keyboard = keyboard
-        self._policy = policy
-        self._foreground = foreground
-        self._uses_gamepad = uses_gamepad
-        self._heartbeat = heartbeat
-        self._toggle_osk = toggle_osk
-        self._launch_app = launch_app
-        self._edges = ButtonEdges()
-        self._chord = ChordTimer(TOGGLE_CHORD, config["toggle_hold_seconds"])
-        self._repeat = DpadRepeater(config["dpad_repeat_delay"], config["dpad_repeat_interval"])
-        self._last: Optional[float] = None
-        self._gate = False
-        self._gate_until = float("-inf")
+    def __init__(self):
+        self.pad = Pad()
+        self.mouse = MouseMode()
+        self.cfg = appmod.load_config()
+        self.ui_hwnd = 0
+        self.kb_visible = False
+        self.taskbar_hidden = False
+        self.inbox = queue.Queue()
+        self.running = True
+        self.was_connected = None
+        self.launch = None  # the launch being observed: deadline, windows that existed, whether one showed up
+        self.next_watch = 0.0
+        self.exclusive = False
+        self.next_exclusive_check = 0.0
 
-    def release_all(self) -> None:
-        self._mouse.release_all()
-        self._keyboard.release_all()
+    # ---- io ------------------------------------------------------------
+    def emit(self, obj):
+        sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
 
-    def step(self, pad: ControllerState, now: float) -> None:
-        dt = 0.0 if self._last is None else min(max(now - self._last, 0.0), MAX_STEP_SECONDS)
-        self._last = now
-        pressed, released = self._edges.update(pad.buttons)
+    def read_stdin(self):
+        for line in sys.stdin:
+            line = line.strip()
+            if line:
+                try:
+                    self.inbox.put(json.loads(line))
+                except ValueError:
+                    pass
+        self.inbox.put({"cmd": "quit"})
 
-        if self._chord.update(pad.buttons, now):
-            self.enabled = not self.enabled
-            log.info("Xbox mode %s", "on" if self.enabled else "off")
-        if "GUIDE" in pressed:
-            self.launcher.toggle()
+    # ---- commands ------------------------------------------------------
+    def set_taskbar(self, visible):
+        winman.set_taskbar_visible(visible)
+        self.taskbar_hidden = not visible
 
-        if self.launcher.open:
-            self._launcher_step(pad, pressed, now)
+    def handle(self, msg):
+        cmd = msg.get("cmd")
+        data = None
+        if cmd == "ui":
+            self.ui_hwnd = msg["hwnd"]
+        elif cmd == "kb":
+            self.kb_visible = bool(msg["visible"])
+        elif cmd == "apply_taskbar":
+            self.set_taskbar(not self.cfg["hide_taskbar"])
+        elif cmd == "taskbar":
+            self.set_taskbar(bool(msg["visible"]))
+        elif cmd == "windows":
+            data = [w.__dict__ for w in winman.list_windows(exclude=(self.ui_hwnd,))]
+        elif cmd == "apps":
+            usage = self.cfg["usage"]
+            hidden = set(self.cfg["hidden_apps"]) | {p for p, n in self.cfg["windowless"].items()
+                                                     if n >= WINDOWLESS_AFTER}
+            data = [{"name": a.name, "path": a.path, "folder": a.folder, "last": usage.get(a.path, 0)}
+                    for a in appmod.scan() if a.path not in hidden]
+        elif cmd == "launch":
+            appmod.launch(appmod.App(msg.get("name", ""), msg["path"]), self.cfg)
+            seen = {w.hwnd for w in winman.list_windows(exclude=(self.ui_hwnd,))}
+            self.launch = {"path": msg["path"], "deadline": time.monotonic() + WATCH_SECONDS, "seen": seen,
+                           "shown": False}
+        elif cmd == "foreground":
+            data = winman.foreground()
+        elif cmd == "focus":
+            winman.focus(msg["hwnd"])
+        elif cmd == "close":
+            winman.close(msg["hwnd"])
+        elif cmd == "config_get":
+            data = {k: v for k, v in self.cfg.items() if k != "usage"}
+        elif cmd == "config_set":
+            self.cfg[msg["key"]] = msg["value"]
+            appmod.save_config(self.cfg)
+            if msg["key"] == "hide_taskbar":
+                self.set_taskbar(not msg["value"])
+        elif cmd == "type":
+            send_text(msg["text"])
+        elif cmd == "vk":
+            send_vk(msg["code"])
+        elif cmd == "quit":
+            self.running = False
+        if "id" in msg:
+            self.emit({"t": "res", "id": msg["id"], "data": data})
+
+    # ---- policy --------------------------------------------------------
+    def is_game(self, fg, now):
+        if winman.exe_name(fg).lower() in {a.lower() for a in self.cfg["game_apps"]}:
+            return True
+        # The shell reports an exclusive full-screen app even while a small pop-up sits in front of it, so the
+        # pop-up must not inherit "game" status: only the window that actually covers the screen counts.
+        if not winman.covers_screen(fg):
+            return False
+        if now >= self.next_exclusive_check:
+            state = ctypes.c_int(0)
+            if shell32.SHQueryUserNotificationState(ctypes.byref(state)) == 0:
+                self.exclusive = state.value == D3D_EXCLUSIVE
+            self.next_exclusive_check = now + 0.5
+        return self.exclusive
+
+    def toggle_game(self, fg):
+        exe = winman.exe_name(fg)
+        if not exe:
             return
-        if self._on_screen is not None and self._on_screen.open:
-            self._keyboard_step(pad, pressed, now)
-            return
-        if self._switcher is not None and self._switcher.open:
-            self._switcher_step(pad, pressed, now)
-            return
-        if self._switcher is not None and "BACK" in pressed:
-            self._switcher.toggle()
-            return
-        if not self.enabled or not self._may_emulate(now):
-            self.release_all()
-            return
-        self._emulate(pad, pressed, released, dt, now)
+        games = self.cfg["game_apps"]
+        match = next((g for g in games if g.lower() == exe.lower()), None)
+        if match:
+            games.remove(match)
+        else:
+            games.append(exe)
+        appmod.save_config(self.cfg)
+        threading.Thread(target=winsound.Beep, args=(440 if match else 880, 140), daemon=True).start()
 
-    def _may_emulate(self, now: float) -> bool:
-        if now >= self._gate_until:
-            pid, exe = self._foreground()
-            uses = self._uses_gamepad(pid, now)
-            self._gate = self._policy.decide(exe, uses, self._heartbeat(), now)
-            self._gate_until = now + GATE_INTERVAL
-        return self._gate
+    def watch_launch(self, now):
+        """Watches a freshly launched app: makes its new windows full screen and learns whether it shows any window."""
+        watch = self.launch
+        fg = winman.foreground()
+        if fg and fg != self.ui_hwnd:
+            watch["shown"] = True  # something other than our UI came to the front, e.g. an app that was already running
+        for w in winman.list_windows(exclude=(self.ui_hwnd,)):
+            if w.hwnd not in watch["seen"]:
+                watch["seen"].add(w.hwnd)
+                watch["shown"] = True
+                if self.cfg["launch_fullscreen"]:
+                    winman.fullscreenize(w.hwnd)
+        if now > watch["deadline"]:
+            self.launch = None
+            self.record_launch(watch["path"], watch["shown"])
 
-    def _launcher_step(self, pad: ControllerState, pressed: frozenset, now: float) -> None:
-        self.release_all()
-        for dx, dy in self._repeat.update(pad.dpad, now):
-            self.launcher.move(dx, dy)
-        if "A" in pressed:
-            app = self.launcher.select()
-            if app is not None:
-                self._launch_app(app)
-        if "B" in pressed:
-            self.launcher.close()
+    def record_launch(self, path, shown):
+        known, misses = self.cfg["has_window"], self.cfg["windowless"]
+        if shown:
+            if path not in known:
+                known.append(path)
+            misses.pop(path, None)
+        elif path not in known:  # an app that has shown a window before is never hidden for a slow start
+            misses[path] = misses.get(path, 0) + 1
+        appmod.save_config(self.cfg)
 
-    def _keyboard_step(self, pad: ControllerState, pressed: frozenset, now: float) -> None:
-        """While the on-screen keyboard is open, the D-pad moves its selection and the buttons type."""
-        self.release_all()
-        for dx, dy in self._repeat.update(pad.dpad, now):
-            self._on_screen.move(dx, dy)
-        if "A" in pressed:
-            key = self._on_screen.press()
-            if key is not None:
-                self._type_key(key)
-        if "X" in pressed:
-            self._keyboard.tap("backspace")
-        if "START" in pressed:
-            self._keyboard.tap("enter")
-        if "B" in pressed or "Y" in pressed:
-            self._on_screen.close()
+    # ---- gamepad -------------------------------------------------------
+    def tick(self, now, dt):
+        fg = winman.foreground()
+        in_ui = bool(self.ui_hwnd) and fg == self.ui_hwnd
+        self.pad.stick_nav = in_ui or self.kb_visible
+        self.pad.update(now)
+        pad = self.pad
+        if pad.connected != self.was_connected:
+            self.was_connected = pad.connected
+            self.emit({"t": "pad", "connected": pad.connected})
+        if self.launch and now >= self.next_watch:
+            self.next_watch = now + 0.5
+            self.watch_launch(now)
 
-    def _switcher_step(self, pad: ControllerState, pressed: frozenset, now: float) -> None:
-        """Task switcher: D-pad or LB/RB pick a window, A switches to it, X closes it, B or BACK leaves."""
-        self.release_all()
-        for dx, _ in self._repeat.update(pad.dpad, now):
-            self._switcher.move(dx)
-        if "LB" in pressed:
-            self._switcher.move(-1)
-        if "RB" in pressed:
-            self._switcher.move(1)
-        if "A" in pressed:
-            self._switcher.activate()
-        if "X" in pressed:
-            self._switcher.close_selected()
-        if "B" in pressed or "BACK" in pressed:
-            self._switcher.close()
+        chord = ("back" in pad.pressed and "start" in pad.held) or ("start" in pad.pressed and "back" in pad.held)
+        if "guide" in pad.pressed:
+            self.emit({"t": "guide"})
+        elif in_ui or self.kb_visible:
+            target = "kb" if self.kb_visible else "ui"
+            for name in pad.events():
+                if name != "guide":
+                    self.emit({"t": "btn", "name": name, "target": target})
+        elif chord:
+            self.toggle_game(fg)
+        elif self.cfg["mouse_mode"] and not self.is_game(fg, now):
+            if "y" in pad.pressed:
+                self.emit({"t": "toggle_kb"})
+            else:
+                self.mouse.apply(pad, dt)
 
-    def _type_key(self, key: Key) -> None:
-        if key.action in ("text", "space"):
-            self._type_text(key.value)
-        elif key.action == "backspace":
-            self._keyboard.tap("backspace")
-        elif key.action == "enter":
-            self._keyboard.tap("enter")
+    def run(self):
+        threading.Thread(target=self.read_stdin, daemon=True).start()
+        last = time.monotonic()
+        try:
+            while self.running:
+                now = time.monotonic()
+                dt, last = now - last, now
+                while True:
+                    try:
+                        self.handle(self.inbox.get_nowait())
+                    except queue.Empty:
+                        break
+                self.tick(now, dt)
+                time.sleep(TICK)
+        finally:
+            if self.taskbar_hidden:
+                winman.set_taskbar_visible(True)
 
-    def _emulate(
-        self,
-        pad: ControllerState,
-        pressed: frozenset,
-        released: frozenset,
-        dt: float,
-        now: float,
-    ) -> None:
-        dx, dy = shape_stick(pad.left[0], pad.left[1], self._deadzone, self._exponent)
-        self._mouse.move(dx * self._mouse_speed * dt, dy * self._mouse_speed * dt)
-        _, ry = shape_stick(pad.right[0], pad.right[1], self._deadzone, self._exponent)
-        self._mouse.scroll(-ry * self._scroll_speed * dt)
-        for name in sorted(pressed):
-            self._press(name)
-        for name in sorted(released):
-            self._release(name)
-        for step in self._repeat.update(pad.dpad, now):
-            key = DPAD_KEYS.get(step)
-            if key is not None:
-                self._keyboard.tap(key)
 
-    def _press(self, name: str) -> None:
-        kind, _, value = self._bindings.get(name, "").partition(":")
-        if kind == "mouse":
-            self._mouse.press(value)
-        elif kind == "key":
-            self._keyboard.tap(value)
-        elif kind == "osk":
-            self._toggle_osk()
+def setup_io():
+    # Piped stdio defaults to the ANSI code page on Windows, which mangles Hebrew; the UI speaks UTF-8.
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
-    def _release(self, name: str) -> None:
-        kind, _, value = self._bindings.get(name, "").partition(":")
-        if kind == "mouse":
-            self._mouse.release(value)
+
+def main():
+    setup_io()
+    ctypes.windll.user32.SetProcessDPIAware()  # so window coordinates are physical pixels
+    Engine().run()

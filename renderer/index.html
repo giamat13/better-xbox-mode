@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Xbox Mode</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="bg"><div id="bgArt"></div><div id="bgFade"></div></div>
+
+  <main id="home" class="view">
+    <header id="topbar">
+      <button id="searchBtn" class="topbtn" aria-label="Search">
+        <svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.5"/><path d="M15 15l6 6"/></svg>
+      </button>
+      <input id="searchInput" type="text" placeholder="Search your library" autocomplete="off" spellcheck="false">
+      <div id="status">
+        <svg viewBox="0 0 24 24" class="stat"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3.5 3.5 3.5 14.500 0 18M12 3c-3.500 3.500-3.500 14.500 0 18"/></svg>
+        <span id="clock"></span>
+        <button id="helpBtn" class="topbtn" aria-label="Help">?</button>
+      </div>
+    </header>
+
+    <h2 id="recentTitle">Recent Games</h2>
+    <div id="recentRow"></div>
+
+    <nav id="tabs"></nav>
+    <section id="cardsWrap"><div id="cardsRow"></div></section>
+
+    <footer id="hints">
+      <div class="hint left"><svg viewBox="0 0 32 32" class="xlogo"><circle cx="16" cy="16" r="14"/><path d="M9 9l14 14M23 9L9 23"/></svg><b>MENU</b></div>
+      <div class="hint right">
+        <span class="pill"></span><b>OPTIONS</b>
+        <span class="btn a">A</span><b id="hintA">SELECT</b>
+        <span class="btn b">B</span><b>BACK</b>
+      </div>
+    </footer>
+  </main>
+
+  <section id="library" class="view hidden">
+    <header id="libBar">
+      <h2>Library <span id="libCount"></span></h2>
+      <input id="libSearch" type="text" placeholder="Type to filter" autocomplete="off" spellcheck="false">
+    </header>
+    <div id="libGrid"></div>
+    <footer class="hints2">
+      <div class="hint left"><b>Y</b><span>SEARCH</span><b>X</b><span>HIDE</span><b>LB / RB</b><span>PAGE</span></div>
+      <div class="hint right">
+        <span class="btn a">A</span><b>LAUNCH</b>
+        <span class="btn b">B</span><b>BACK</b>
+      </div>
+    </footer>
+  </section>
+
+  <section id="switcher" class="view hidden">
+    <div id="swTop">
+      <div id="swIcons"></div>
+      <div id="swStatus">
+        <svg viewBox="0 0 24 24" class="stat"><path d="M2 9a15 15 0 0 1 20 0M5 12.500a10.500 10.500 0 0 1 14 0M8.500 16a5.500 5.500 0 0 1 7 0"/><circle cx="12" cy="19.500" r="1" fill="currentColor"/></svg>
+        <svg viewBox="0 0 24 24" class="stat"><path d="M3 9h4l5-4v14l-5-4H3z"/><path d="M16 9a4 4 0 0 1 0 6M18.500 6.500a8 8 0 0 1 0 11"/></svg>
+        <svg viewBox="0 0 28 24" class="stat batt"><rect x="2" y="7" width="21" height="10" rx="2"/><path d="M25 10v4"/><rect id="swBattFill" x="4" y="9" width="17" height="6" fill="currentColor" stroke="none"/></svg>
+        <span id="swClock"></span>
+      </div>
+    </div>
+    <div id="swViewport"><div id="swCarousel"></div></div>
+    <div id="swModes"></div>
+  </section>
+
+  <div id="help" class="hidden">
+    <div class="panel">
+      <h3>Controls</h3>
+      <ul>
+        <li><b>Xbox button</b> App switcher</li>
+        <li><b>D-pad / Left stick</b> Navigate &nbsp;·&nbsp; move the mouse on the desktop</li>
+        <li><b>A</b> Select &nbsp;·&nbsp; left click</li>
+        <li><b>B</b> Back &nbsp;·&nbsp; Esc</li>
+        <li><b>X</b> Close app &nbsp;·&nbsp; right click</li>
+        <li><b>Y</b> On-screen keyboard (desktop)</li>
+        <li><b>LB / RB</b> Switch tab</li>
+        <li><b>Menu</b> Settings</li>
+        <li><b>Right stick</b> Scroll</li>
+        <li><b>Back + Start</b> Give the controller to the current app (game) or take it back</li>
+      </ul>
+      <p>Press B to close</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

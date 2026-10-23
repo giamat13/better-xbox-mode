@@ -1,0 +1,16 @@
+{
+  "name": "xbox-mode",
+  "version": "0.1.0",
+  "description": "Console-style full screen shell for Windows, controlled with a gamepad. UI in Electron, system layer in Python.",
+  "main": "main.js",
+  "scripts": {
+    "start": "node scripts/start.js",
+    "windowed": "node scripts/start.js --windowed",
+    "test": "python -m unittest discover -s tests -v && node --test tests/pe.test.js"
+  },
+  "author": "Giamat13",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^45.0.0"
+  }
+}
