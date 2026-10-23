@@ -104,6 +104,7 @@ class MouseMode:
     def __init__(self):
         self._frac_x = self._frac_y = self._frac_scroll = self._frac_hscroll = 0.0
         self.mag = Magnifier()
+        self.clipboard_enabled = True  # off while Xbox Mode's own window is on screen
 
     def close(self):
         self.mag.reset()
@@ -131,7 +132,7 @@ class MouseMode:
 
         self._zoom(pad, dt)
 
-        if "lb" in pad.pressed:
+        if "lb" in pad.pressed and self.clipboard_enabled:
             self.copy_and_open_clipboard()
         if "rs" in pad.pressed:
             winman.move_cursor_to_next_monitor()  # click the right stick to jump to the other monitor

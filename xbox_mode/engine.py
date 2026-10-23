@@ -300,6 +300,7 @@ class Engine:
         fg = winman.foreground()
         in_ui = bool(self.ui_hwnd) and (fg == self.ui_hwnd or self.is_own_window(fg))
         self.pad.stick_nav = in_ui or self.kb_visible
+        self.mouse.clipboard_enabled = not (in_ui or self.kb_visible or winman.is_shown(self.ui_hwnd))
         self.pad.update(now)
         pad = self.pad
         if pad.connected != self.was_connected:

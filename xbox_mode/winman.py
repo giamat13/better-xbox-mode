@@ -128,6 +128,10 @@ def list_windows(exclude=()):
     return found
 
 
+def is_shown(hwnd):
+    return bool(hwnd) and bool(user32.IsWindowVisible(hwnd)) and not user32.IsIconic(hwnd)
+
+
 def foreground():
     return user32.GetForegroundWindow() or 0
 
