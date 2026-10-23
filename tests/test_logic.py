@@ -85,14 +85,25 @@ class GameDetectionTests(unittest.TestCase):
     def test_full_screen_app_without_a_gamepad_library_gets_the_mouse(self):
         self.assertFalse(self.make(modules={"kernel32.dll", "user32.dll"}).is_game(99, 0.0))
 
-    def test_windowed_or_pop_up_window_gets_the_mouse_even_in_a_game_process(self):
-        self.assertFalse(self.make(covers=False, modules={"xinput1_4.dll"}).is_game(99, 0.0))
+    def test_windowed_game_keeps_the_controller_too(self):
+        self.assertTrue(self.make(covers=False, modules={"xinput1_4.dll"}).is_game(99, 0.0))
+
+    def test_exclusive_state_only_counts_for_a_window_covering_the_screen(self):
+        self.assertFalse(self.make(covers=False, modules={"kernel32.dll"}, exclusive=True).is_game(99, 0.0))
+
+    def test_windows_command_reports_the_detected_mode(self):
+        engine = self.make(modules={"xinput1_4.dll"})
+        sent = []
+        engine.emit = sent.append
+        with mock.patch.object(winman, "list_windows", return_value=[winman.Win(5, "Game", "game.exe", "p")]):
+            engine.handle({"id": 1, "cmd": "windows"})
+        self.assertEqual(sent[0]["data"][0]["game"], True)
 
     def test_exclusive_direct3d_full_screen_is_a_game(self):
         self.assertTrue(self.make(exclusive=True).is_game(99, 0.0))
 
-    def test_process_that_cannot_be_inspected_is_not_assumed_to_be_a_game(self):
-        self.assertFalse(self.make(modules=None).is_game(99, 0.0))
+    def test_protected_process_that_cannot_be_inspected_keeps_the_controller(self):
+        self.assertTrue(self.make(modules=None).is_game(99, 0.0))
 
     def test_overrides_beat_detection(self):
         self.assertFalse(self.make(exe="Steam.exe", modules={"xinput1_4.dll"}, mouse_apps=["steam.exe"]).is_game(99, 0.0))
@@ -103,8 +114,8 @@ class GameDetectionTests(unittest.TestCase):
 
     def test_toggle_flips_between_game_and_mouse_and_remembers(self):
         engine = self.make(exe="Some.exe", modules={"xinput1_4.dll"})
-        with mock.patch.object(apps, "save_config"), mock.patch("xbox_mode.engine.winsound.Beep"):
-            engine.toggle_game(99, 0.0)  # detected as a game, so it becomes a mouse app
+        with mock.patch.object(apps, "save_config"):
+            self.assertFalse(engine.toggle_game(99, 0.0))  # detected as a game, so it becomes a mouse app
             self.assertEqual((engine.cfg["mouse_apps"], engine.cfg["game_apps"]), (["Some.exe"], []))
             self.assertFalse(engine.is_game(99, 1.0))
             engine.toggle_game(99, 1.0)

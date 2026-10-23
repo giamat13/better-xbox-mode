@@ -5,9 +5,9 @@ UI -> engine: {"id": n, "cmd": "...", ...args}   engine -> UI: {"t": "res", "id"
 Engine events: {"t": "btn", "name", "target": "ui"|"kb"}, {"t": "guide"}, {"t": "toggle_kb"}, {"t": "pad", "connected"}
 
 Outside the Xbox UI the left stick drives the mouse, except in "game" windows, which keep the controller to
-themselves. A game is a window that covers the screen and belongs to a process that reads the controller (it has
-loaded XInput, DirectInput, SDL or GameInput) or runs exclusive Direct3D full screen. Back+Start flips the current
-app between game and mouse (a beep confirms) and the choice is remembered.
+themselves: only the Guide button stays ours. A game is a window whose process reads the controller (it has loaded
+XInput, DirectInput, SDL, GameInput or Steam's API), runs exclusive Direct3D full screen, or cannot be inspected
+(protected). The switcher shows what was detected and flips it per app with Y; the choice is remembered.
 """
 import ctypes
 import json
@@ -15,7 +15,6 @@ import queue
 import sys
 import threading
 import time
-import winsound
 
 from . import apps as appmod
 from . import winman
@@ -32,7 +31,8 @@ WINDOWLESS_AFTER = 2  # launches in a row that showed no window before an app is
 D3D_EXCLUSIVE = 3  # QUNS_RUNNING_D3D_FULL_SCREEN
 AWARE_RECHECK_SECONDS = 2.0
 GAMEPAD_DLLS = {"xinput1_1.dll", "xinput1_2.dll", "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll", "dinput.dll",
-                "dinput8.dll", "sdl2.dll", "sdl3.dll", "gameinput.dll", "windows.gaming.input.dll"}
+                "dinput8.dll", "sdl2.dll", "sdl3.dll", "gameinput.dll", "windows.gaming.input.dll", "xinputuap.dll",
+                "steam_api.dll", "steam_api64.dll"}
 shell32 = ctypes.windll.shell32
 
 
@@ -88,7 +88,11 @@ class Engine:
         elif cmd == "taskbar":
             self.set_taskbar(bool(msg["visible"]))
         elif cmd == "windows":
-            data = [w.__dict__ for w in winman.list_windows(exclude=(self.ui_hwnd,))]
+            now = time.monotonic()
+            data = [{**w.__dict__, "game": self.is_game(w.hwnd, now)}
+                    for w in winman.list_windows(exclude=(self.ui_hwnd,))]
+        elif cmd == "toggle_game":
+            data = self.toggle_game(msg["hwnd"], time.monotonic())
         elif cmd == "apps":
             usage = self.cfg["usage"]
             hidden = set(self.cfg["hidden_apps"]) | {p for p, n in self.cfg["windowless"].items()
@@ -123,22 +127,27 @@ class Engine:
             self.emit({"t": "res", "id": msg["id"], "data": data})
 
     # ---- policy --------------------------------------------------------
-    def is_game(self, fg, now):
-        exe = winman.exe_name(fg).lower()
+    def is_game(self, hwnd, now):
+        """True when the window's program talks to the controller itself, so the engine must stay out of the way."""
+        exe = winman.exe_name(hwnd).lower()
         if exe in {a.lower() for a in self.cfg["mouse_apps"]}:
             return False
         if exe in {a.lower() for a in self.cfg["game_apps"]}:
             return True
-        # Only the window that covers the screen can be a game; a pop-up in front of one must keep the mouse.
-        return winman.covers_screen(fg) and self.reads_controller(fg, now)
+        return self.reads_controller(hwnd, now)
 
-    def reads_controller(self, fg, now):
-        pid = winman.pid_of(fg)
+    def reads_controller(self, hwnd, now):
+        pid = winman.pid_of(hwnd)
         cached = self.aware.get(pid)
         if cached and now - cached[0] < AWARE_RECHECK_SECONDS:
             return cached[1]
         modules = winman.module_names(pid)
-        aware = bool(modules and modules & GAMEPAD_DLLS) or self.exclusive_fullscreen(now)
+        if modules is None:
+            # Not inspectable: an anti-cheat protected game or an elevated program. The first must be left alone, and
+            # the second ignores injected input anyway, so hands off either way.
+            aware = True
+        else:
+            aware = bool(modules & GAMEPAD_DLLS) or (winman.covers_screen(hwnd) and self.exclusive_fullscreen(now))
         if len(self.aware) > 64:
             self.aware.clear()
         self.aware[pid] = (now, aware)
@@ -152,18 +161,18 @@ class Engine:
             self.next_exclusive_check = now + 0.5
         return self.exclusive
 
-    def toggle_game(self, fg, now):
-        """Flips the current app between "game" (keeps the controller) and "mouse" and remembers the choice."""
-        exe = winman.exe_name(fg)
+    def toggle_game(self, hwnd, now):
+        """Flips a window's program between "game" (keeps the controller) and "mouse"; the choice is remembered."""
+        exe = winman.exe_name(hwnd)
         if not exe:
-            return
-        make_game = not self.is_game(fg, now)
+            return False
+        make_game = not self.is_game(hwnd, now)
         for key in ("game_apps", "mouse_apps"):
             self.cfg[key] = [a for a in self.cfg[key] if a.lower() != exe.lower()]
         self.cfg["game_apps" if make_game else "mouse_apps"].append(exe)
         self.aware.clear()
         appmod.save_config(self.cfg)
-        threading.Thread(target=winsound.Beep, args=(880 if make_game else 440, 140), daemon=True).start()
+        return make_game
 
     def reclaim_from_steam(self, fg):
         """Steam listens to the Guide button too and raises its own window over us.
@@ -219,7 +228,6 @@ class Engine:
             self.next_watch = now + 0.5
             self.watch_launch(now)
 
-        chord = ("back" in pad.pressed and "start" in pad.held) or ("start" in pad.pressed and "back" in pad.held)
         if now < self.guard_until and now >= self.next_guard:
             self.next_guard = now + 0.1
             self.reclaim_from_steam(fg)
@@ -233,8 +241,6 @@ class Engine:
             for name in pad.events():
                 if name != "guide":
                     self.emit({"t": "btn", "name": name, "target": target})
-        elif chord:
-            self.toggle_game(fg, now)
         elif self.cfg["mouse_mode"] and not self.is_game(fg, now):
             if "y" in pad.pressed:
                 self.emit({"t": "toggle_kb"})

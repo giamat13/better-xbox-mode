@@ -240,7 +240,7 @@ function updateFocus() {
   else target = $('#cardsRow').children[S.card];
   if (target) {
     target.classList.add('focus');
-    if (S.zone === ZONE.CARDS) target.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    if (S.zone === ZONE.CARDS) centerIn($('#cardsWrap'), target, 'x');
   }
   if (S.zone === ZONE.RECENT && S.ranked[S.recent]) setBackground(S.ranked[S.recent]);
   $('#hintA').textContent = S.zone === ZONE.CARDS && S.tab === 1 ? 'SWITCH  ·  X CLOSE' : 'SELECT';
@@ -248,6 +248,20 @@ function updateFocus() {
 
 // ---- home input -------------------------------------------------------------------------
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// Scrolls only the given container so the element sits in its middle. scrollIntoView also scrolls the page itself,
+// which pushed the header and the search box off screen during fast scrolling.
+function centerIn(container, element, axis) {
+  if (!element) return;
+  if (axis === 'x') container.scrollTo({ left: element.offsetLeft - (container.clientWidth - element.offsetWidth) / 2, behavior: 'smooth' });
+  else container.scrollTo({ top: element.offsetTop - (container.clientHeight - element.offsetHeight) / 2, behavior: 'smooth' });
+}
+
+// The page must never scroll (only the grid and the shelf do); undo it if anything ever pushes it.
+document.addEventListener('scroll', () => {
+  const root = document.scrollingElement;
+  if (root.scrollTop || root.scrollLeft) root.scrollTo(0, 0);
+});
 
 async function setTab(i) {
   S.tab = ((i % TABS.length) + TABS.length) % TABS.length;
@@ -372,7 +386,7 @@ function renderLibrary() {
 function focusLibrary() {
   const tiles = $('#libGrid').children;
   [...tiles].forEach((t, i) => t.classList.toggle('focus', i === S.lib));
-  tiles[S.lib]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  centerIn($('#libGrid'), tiles[S.lib], 'y');
 }
 
 async function libraryButton(name) {
@@ -411,7 +425,7 @@ async function openSwitcher(prev = 0) {
   const cards = [{ xbox: true, title: 'Xbox', thumb: home }];
   for (const w of wins) {
     const t = byHwnd.get(w.hwnd);
-    cards.push({ hwnd: w.hwnd, title: w.title, thumb: t?.thumb || null, icon: t?.icon || null, path: w.path });
+    cards.push({ hwnd: w.hwnd, title: w.title, thumb: t?.thumb || null, icon: t?.icon || null, path: w.path, game: w.game });
   }
   const at = cards.findIndex((c) => c.hwnd && c.hwnd === prev);
   S.sw = { cards, sel: Math.max(0, at), zone: 'cards', mode: 0, prev };
@@ -464,8 +478,10 @@ function renderSwitcher() {
       const body = el('div', 'body');
       body.style.background = c.thumb ? `url(${c.thumb}) top center / cover` : gradient(c.xbox ? 130 : hueOf(c.title), c.xbox ? 60 : 30);
       if (c.xbox && !c.thumb) body.innerHTML = `<div class="bigx">${XLOGO}</div>`;
-      const hints = el('div', 'hints', `<span><i class="g">A</i>Select</span>${c.xbox ? '' : '<span><i class="g">X</i>Close App</span>'}`);
+      const hints = el('div', 'hints', `<span><i class="g">A</i>Select</span>${c.xbox ? ''
+        : '<span><i class="g">X</i>Close App</span><span><i class="g">Y</i>Controller</span>'}`);
       d.append(hd, body, hints);
+      if (!c.xbox) d.append(el('div', `badge${c.game ? ' game' : ''}`, c.game ? 'Controller: game' : 'Controller: mouse'));
       car.append(d);
     });
   }
@@ -498,6 +514,15 @@ function switcherButton(name) {
     const c = sw.cards[sw.sel];
     if (c.xbox) return closeSwitcher();
     xbox.call('focus', { hwnd: c.hwnd });
+  } else if (name === 'y' && sw.cards[sw.sel].hwnd) {
+    // Flip this app between "it handles the controller itself" and "controller acts as a mouse".
+    const card = sw.cards[sw.sel];
+    xbox.call('toggle_game', { hwnd: card.hwnd }).then((game) => {
+      card.game = game;
+      $('#swCarousel').innerHTML = '';
+      renderSwitcher();
+    });
+    return;
   } else if (name === 'x' && !sw.cards[sw.sel].xbox) {
     markClosing(sw.cards[sw.sel].hwnd);
     xbox.call('close', { hwnd: sw.cards[sw.sel].hwnd });
@@ -564,7 +589,7 @@ function applyWindows(wins, thumbs) {
   if (S.view === 'switcher') {
     const sw = S.sw;
     const keep = sw.cards[sw.sel]?.hwnd;
-    sw.cards = [sw.cards[0], ...merged.map((w) => ({ hwnd: w.hwnd, title: w.title, thumb: w.thumb, icon: w.icon, path: w.path }))];
+    sw.cards = [sw.cards[0], ...merged.map((w) => ({ hwnd: w.hwnd, title: w.title, thumb: w.thumb, icon: w.icon, path: w.path, game: w.game }))];
     const at = keep ? sw.cards.findIndex((c) => c.hwnd === keep) : -1;
     sw.sel = at >= 0 ? at : clamp(sw.sel, 0, sw.cards.length - 1);
     $('#swCarousel').innerHTML = '';

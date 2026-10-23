@@ -17,7 +17,8 @@ FOLDER_SKIP = {"accessories", "administrative tools", "system tools", "windows t
 GAME_HINTS = re.compile(r"steam|epic games|gog|ubisoft|ea app|battle\.net|xbox|minecraft|game", re.I)
 DEFAULTS = {"hide_taskbar": True, "mouse_mode": True, "launch_fullscreen": True, "game_apps": [],
             # Launchers are UIs, not games: they keep the controller-as-mouse even though they load XInput.
-            "mouse_apps": ["steam.exe", "steamwebhelper.exe", "EpicGamesLauncher.exe"], "hidden_apps": [],
+            "mouse_apps": ["steam.exe", "steamwebhelper.exe", "EpicGamesLauncher.exe", "Battle.net.exe",
+                           "GalaxyClient.exe", "EADesktop.exe", "UbisoftConnect.exe", "upc.exe"], "hidden_apps": [],
             "windowless": {}, "has_window": [], "usage": {}}
 
 

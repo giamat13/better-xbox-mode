@@ -64,10 +64,13 @@ python -c "from xbox_mode import winman; winman.set_taskbar_visible(True)"
 
 | Library grid | D-pad, LB / RB | Move, jump a page |
 | Library grid | Y / A / B | Search / launch / back |
-| Any app | Back + Start | Hand the controller to this app (it is treated as a game) or take it back; a beep confirms |
+| Switcher | Y | Flip the selected app between "game" (keeps the controller) and "mouse" |
 
-Outside the Xbox UI the controller drives the mouse in every window, except games: exclusive full-screen Direct3D
-apps are detected automatically, and anything else can be flagged with Back + Start.
+Outside the Xbox UI the controller drives the mouse in every window, except games. A window counts as a game when
+its program reads the controller itself (it loaded XInput, DirectInput, SDL, GameInput or Steam's API), runs exclusive
+Direct3D full screen, or cannot be inspected (anti-cheat protected). In a game only the Guide button stays ours. Each
+card in the switcher shows what was detected, and Y flips it; the choice is remembered. Launchers such as Steam and
+Epic default to "mouse".
 Apps launched from the library are made borderless and screen-sized (like pressing F11); turn it off in Settings.
 Dev fallback in the UI window: arrow keys, Enter (A), Esc (B), X, Y, Q/E (LB/RB), S (Menu), F1 (Guide).
 

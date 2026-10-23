@@ -91,6 +91,13 @@ function createMainWindow() {
   });
   if (SHOT) {
     win.webContents.on('console-message', (e, ...rest) => console.log('[renderer]', e.message ?? rest[1]));
+    win.webContents.once('did-finish-load', () => {
+      // Test hook: --press=down:40 replays that many button presses, quickly, before the screenshot.
+      const [name, count] = argValue('press').split(':');
+      for (let i = 0; name && i < Number(count); i++) {
+        setTimeout(() => win.webContents.send('btn', name), 1500 + i * 15);
+      }
+    });
     win.webContents.once('did-finish-load', () => setTimeout(async () => {
       const img = await win.webContents.capturePage();
       fs.writeFileSync(SHOT, img.toPNG());

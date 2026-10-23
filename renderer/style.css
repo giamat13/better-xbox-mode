@@ -135,6 +135,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .swcard.sel .hints { display: flex; }
 .swcard .hints .g { display: inline-grid; place-items: center; width: 3.4vh; height: 3.4vh; border: .25vh solid #fff; border-radius: 50%;
   font-size: 2.1vh; font-weight: 700; margin-right: .7vw; }
+.swcard .badge { position: absolute; right: 1.2vw; top: 11.4vh; font-size: 2.3vh; padding: .5vh 1.1vw; border-radius: 3vh;
+  background: rgba(0,0,0,.65); color: #d8d8d8; }
+.swcard .badge.game { background: rgba(16,124,16,.85); color: #fff; }
 #swModes { position: absolute; left: 0; right: 0; bottom: 0; height: 8.2vh; background: #161616; border-top: .2vh solid #3a3a3a;
   display: flex; justify-content: center; align-items: center; gap: .9vw; }
 .mode { display: flex; align-items: center; gap: .9vw; height: 5.8vh; padding: 0 1.3vw; border-radius: .7vh; font-size: 2.35vh; color: #a5a5a5; position: relative; }
