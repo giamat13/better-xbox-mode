@@ -77,10 +77,10 @@ Settings live in `%APPDATA%\xbox_mode\config.json` and can be changed from the S
 
 ## Steam and the Guide button
 
-Steam also listens to the Guide button and may open its own Big Picture window over the switcher. For three seconds
-after each Guide press the engine closes a Steam Big Picture window that takes the screen and brings the switcher
-back. This matches the window by its title, so it is a workaround; if Big Picture still wins, turn off Steam's
-"Guide Button Focuses Steam" (Settings, Controller).
+Steam also listens to the Guide button and may raise its own window (Big Picture or the regular client) over the
+switcher. For four seconds after each Guide press the engine minimizes any Steam window that takes the screen and
+brings the switcher back, unless you have just launched an app from the library (so opening Steam yourself works).
+This is a workaround; if Steam still wins, turn off its "Guide Button Focuses Steam" (Settings, Controller).
 
 ## Known limitations
 

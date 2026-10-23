@@ -112,6 +112,10 @@ def focus(hwnd):
     user32.keybd_event(0x12, 0, 2, 0)
 
 
+def minimize(hwnd):
+    user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+
+
 def close(hwnd):
     user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
 

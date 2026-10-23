@@ -3,7 +3,10 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from xbox_mode import apps
+from unittest import mock
+
+from xbox_mode import apps, winman
+from xbox_mode.engine import Engine
 from xbox_mode.xinput import Pad
 
 
@@ -59,6 +62,29 @@ class PadTests(unittest.TestCase):
         pad = self.pad_with([gamepad(buttons=0x0400)])
         pad.update(0.0)
         self.assertIn("guide", pad.pressed)
+
+
+class SteamGuardTests(unittest.TestCase):
+    def run_guard(self, exe, launching=False):
+        engine = Engine()
+        engine.ui_hwnd = 1
+        engine.launch = {"path": "x"} if launching else None
+        calls = []
+        with mock.patch.object(winman, "exe_name", return_value=exe), \
+                mock.patch.object(winman, "minimize", lambda h: calls.append(("minimize", h))), \
+                mock.patch.object(winman, "focus", lambda h: calls.append(("focus", h))):
+            engine.reclaim_from_steam(99)
+        return calls
+
+    def test_steam_window_after_guide_is_minimized_and_ui_comes_back(self):
+        self.assertEqual(self.run_guard("steam.exe"), [("minimize", 99), ("focus", 1)])
+        self.assertEqual(self.run_guard("SteamWebHelper.exe"), [("minimize", 99), ("focus", 1)])
+
+    def test_steam_is_left_alone_when_the_user_just_launched_something(self):
+        self.assertEqual(self.run_guard("steam.exe", launching=True), [])
+
+    def test_other_apps_are_left_alone(self):
+        self.assertEqual(self.run_guard("game.exe"), [])
 
 
 class AppsTests(unittest.TestCase):

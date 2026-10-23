@@ -23,7 +23,7 @@ from .xinput import Pad
 
 TICK = 1 / 125
 WATCH_SECONDS = 45
-STEAM_GUARD_SECONDS = 3  # after Guide, how long Steam's own Big Picture window is pushed back
+STEAM_GUARD_SECONDS = 4  # after Guide, how long a Steam window that takes the screen is pushed back
 STEAM_EXES = {"steam.exe", "steamwebhelper.exe"}
 WINDOWLESS_AFTER = 2  # launches in a row that showed no window before an app is hidden
 D3D_EXCLUSIVE = 3  # QUNS_RUNNING_D3D_FULL_SCREEN
@@ -143,11 +143,14 @@ class Engine:
         threading.Thread(target=winsound.Beep, args=(440 if match else 880, 140), daemon=True).start()
 
     def reclaim_from_steam(self, fg):
-        """Steam listens to the Guide button too and opens Big Picture over us; close it and take the screen back."""
-        if (fg and fg != self.ui_hwnd and winman.exe_name(fg).lower() in STEAM_EXES
-                and "big picture" in winman.title(fg).lower()):
-            winman.close(fg)
-            winman.focus(self.ui_hwnd)
+        """Steam listens to the Guide button too and raises its own window over us.
+
+        Push that window back (minimize, never close: closing Big Picture drops Steam into its desktop window) and
+        bring the UI forward again, unless the user has just launched an app themselves, which may be Steam."""
+        if self.launch or not fg or fg == self.ui_hwnd or winman.exe_name(fg).lower() not in STEAM_EXES:
+            return
+        winman.minimize(fg)
+        winman.focus(self.ui_hwnd)
 
     def watch_launch(self, now):
         """Watches a freshly launched app: makes its new windows full screen and learns whether it shows any window."""
