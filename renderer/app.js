@@ -261,6 +261,8 @@ async function launch(app) {
   await xbox.call('launch', { path: app.path, name: app.name });
   app.last = Date.now() / 1000;
   S.ranked = rank(S.apps);
+  // The tiles on screen must follow the new order, or the next press launches whatever now sits at that position.
+  if (S.view === 'library') renderLibrary(); else renderHome();
 }
 
 async function homeButton(name) {

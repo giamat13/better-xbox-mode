@@ -27,6 +27,7 @@ TICK = 1 / 125
 WATCH_SECONDS = 45
 STEAM_GUARD_SECONDS = 4  # after Guide, how long a Steam window that takes the screen is pushed back
 STEAM_EXES = {"steam.exe", "steamwebhelper.exe"}
+STEAM_MAX_PUSHES = 3
 WINDOWLESS_AFTER = 2  # launches in a row that showed no window before an app is hidden
 D3D_EXCLUSIVE = 3  # QUNS_RUNNING_D3D_FULL_SCREEN
 AWARE_RECHECK_SECONDS = 2.0
@@ -53,6 +54,7 @@ class Engine:
         self.aware = {}  # pid -> (checked at, whether the process reads the controller)
         self.guard_until = 0.0
         self.next_guard = 0.0
+        self.pushed = 0
 
     # ---- io ------------------------------------------------------------
     def emit(self, obj):
@@ -96,8 +98,8 @@ class Engine:
         elif cmd == "launch":
             appmod.launch(appmod.App(msg.get("name", ""), msg["path"]), self.cfg)
             seen = {w.hwnd for w in winman.list_windows(exclude=(self.ui_hwnd,))}
-            self.launch = {"path": msg["path"], "deadline": time.monotonic() + WATCH_SECONDS, "seen": seen,
-                           "shown": False}
+            self.launch = {"path": msg["path"], "exe": msg.get("exe", ""), "deadline": time.monotonic() + WATCH_SECONDS,
+                           "seen": seen, "shown": False}
         elif cmd == "foreground":
             data = winman.foreground()
         elif cmd == "focus":
@@ -168,8 +170,11 @@ class Engine:
 
         Push that window back (minimize, never close: closing Big Picture drops Steam into its desktop window) and
         bring the UI forward again, unless the user has just launched an app themselves, which may be Steam."""
-        if self.launch or not fg or fg == self.ui_hwnd or winman.exe_name(fg).lower() not in STEAM_EXES:
+        launching_steam = self.launch and self.launch.get("exe", "").lower() in STEAM_EXES
+        if (launching_steam or not fg or fg == self.ui_hwnd or winman.exe_name(fg).lower() not in STEAM_EXES
+                or self.pushed >= STEAM_MAX_PUSHES):
             return
+        self.pushed += 1  # a few tries per Guide press, so a window that keeps coming back cannot start a fight
         winman.minimize(fg)
         winman.focus(self.ui_hwnd)
 
@@ -183,7 +188,8 @@ class Engine:
             if w.hwnd not in watch["seen"]:
                 watch["seen"].add(w.hwnd)
                 watch["shown"] = True
-                if self.cfg["launch_fullscreen"]:
+                # Only the launched program's own windows: other programs' windows (Steam popping up, say) stay as is.
+                if self.cfg["launch_fullscreen"] and watch["exe"] and w.exe.lower() == watch["exe"].lower():
                     winman.fullscreenize(w.hwnd)
         if now > watch["deadline"]:
             self.launch = None
@@ -219,6 +225,7 @@ class Engine:
             self.reclaim_from_steam(fg)
 
         if "guide" in pad.pressed:
+            self.pushed = 0
             self.guard_until = now + STEAM_GUARD_SECONDS
             self.emit({"t": "guide"})
         elif in_ui or self.kb_visible:

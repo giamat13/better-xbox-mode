@@ -173,6 +173,10 @@ function filterApps(list) {
 }
 
 ipcMain.handle('engine', async (_e, cmd, extra) => {
+  if (cmd === 'launch') {
+    // The engine only makes windows of the program you launched full screen, so tell it which executable that is.
+    try { extra = { ...extra, exe: path.basename(shell.readShortcutLink(extra.path).target || '') }; } catch { /* unknown */ }
+  }
   const data = await call(cmd, extra);
   return cmd === 'apps' ? filterApps(data) : data;
 });

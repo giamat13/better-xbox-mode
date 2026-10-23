@@ -113,10 +113,11 @@ class GameDetectionTests(unittest.TestCase):
 
 
 class SteamGuardTests(unittest.TestCase):
-    def run_guard(self, exe, launching=False):
+    def run_guard(self, exe, launching=None, pushed=0):
         engine = Engine()
         engine.ui_hwnd = 1
-        engine.launch = {"path": "x"} if launching else None
+        engine.pushed = pushed
+        engine.launch = {"path": "x", "exe": launching} if launching else None
         calls = []
         with mock.patch.object(winman, "exe_name", return_value=exe), \
                 mock.patch.object(winman, "minimize", lambda h: calls.append(("minimize", h))), \
@@ -128,8 +129,27 @@ class SteamGuardTests(unittest.TestCase):
         self.assertEqual(self.run_guard("steam.exe"), [("minimize", 99), ("focus", 1)])
         self.assertEqual(self.run_guard("SteamWebHelper.exe"), [("minimize", 99), ("focus", 1)])
 
-    def test_steam_is_left_alone_when_the_user_just_launched_something(self):
-        self.assertEqual(self.run_guard("steam.exe", launching=True), [])
+    def test_steam_is_left_alone_when_the_user_just_launched_steam(self):
+        self.assertEqual(self.run_guard("steam.exe", launching="steam.exe"), [])
+
+    def test_launching_another_app_does_not_switch_the_guard_off(self):
+        self.assertEqual(self.run_guard("steam.exe", launching="EpicGamesLauncher.exe"),
+                         [("minimize", 99), ("focus", 1)])
+
+    def test_the_guard_gives_up_after_a_few_tries(self):
+        self.assertEqual(self.run_guard("steam.exe", pushed=3), [])
+
+    def test_only_the_launched_programs_windows_are_made_full_screen(self):
+        engine = Engine()
+        engine.cfg["launch_fullscreen"] = True
+        engine.launch = {"path": "x", "exe": "EpicGamesLauncher.exe", "deadline": 10 ** 9, "seen": set(), "shown": False}
+        windows = [winman.Win(1, "Epic", "epicgameslauncher.exe", "p"), winman.Win(2, "Steam", "steamwebhelper.exe", "p")]
+        made = []
+        with mock.patch.object(winman, "foreground", return_value=0), \
+                mock.patch.object(winman, "list_windows", return_value=windows), \
+                mock.patch.object(winman, "fullscreenize", lambda h: made.append(h)):
+            engine.watch_launch(0.0)
+        self.assertEqual(made, [1])
 
     def test_other_apps_are_left_alone(self):
         self.assertEqual(self.run_guard("game.exe"), [])
