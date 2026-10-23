@@ -1,0 +1,15 @@
+* { box-sizing: border-box; margin: 0; padding: 0; cursor: none; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; user-select: none;
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: #f2f2f2; }
+#panel { position: absolute; inset: 0; background: rgba(24,24,26,.97); border-radius: 1.6vh;
+  border: .2vh solid #3a3a3e; padding: 1.4vh; display: flex; flex-direction: column; gap: .8vh;
+  box-shadow: 0 0 4vh rgba(0,0,0,.6); }
+#rows { flex: 1; display: flex; flex-direction: column; gap: .8vh; }
+.row { flex: 1; display: flex; gap: .8vh; min-height: 0; }
+.key { flex-basis: 0; display: grid; place-items: center; border-radius: 1vh; background: #3a3a3e; font-size: 3.2vh;
+  min-width: 0; }
+.key.special { background: #2b2b2e; font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; }
+.key.spacer { background: none; visibility: hidden; }
+.key.on { background: #3d6b3d; }
+.key.focus { background: #107c10; box-shadow: 0 0 0 .35vh #7dddf0; }
+#hint { text-align: center; font-size: 2.2vh; color: #9a9aa0; }
