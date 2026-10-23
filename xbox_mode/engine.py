@@ -208,6 +208,8 @@ class Engine:
     def is_game(self, hwnd, now):
         """True when the window's program talks to the controller itself, so the engine must stay out of the way."""
         exe = winman.exe_name(hwnd).lower()
+        if exe in BROWSER_EXES and self.tab_game:
+            return True  # the front tab is on a site marked as a game, whatever the browser itself is set to
         if exe in {a.lower() for a in self.cfg["mouse_apps"]}:
             return False
         if exe in {a.lower() for a in self.cfg["game_apps"]}:

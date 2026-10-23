@@ -114,6 +114,12 @@ function createMainWindow() {
     ...b, frame: false, resizable: false, backgroundColor: '#0b0d12', show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), backgroundThrottling: false },
   });
+  // The keyboard window is only ever hidden, so it would keep the app alive after this one is closed: closing the main
+  // window quits everything (the engine too), with a hard exit as a fallback.
+  win.on('closed', () => {
+    app.quit();
+    setTimeout(() => app.exit(0), 1500);
+  });
   win.setMenuBarVisibility(false);
   win.loadFile(path.join('renderer', 'index.html'), { query: { view: VIEW } });
   win.once('ready-to-show', () => {
