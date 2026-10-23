@@ -9,6 +9,7 @@ const HINTS_MS = 6000;
 const NAV_SELECTOR = 'a[href], button, input, select, textarea, summary, [role="button"], [role="tab"], [role="link"], [tabindex]:not([tabindex="-1"])';
 const TEXT_INPUT = 'input:not([type=button]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=range]), textarea, [contenteditable=""], [contenteditable="true"]';
 const SEARCH_BOX = 'input#search, input[name="search_query"]';
+const TILE = 'ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-playlist-video-renderer, ytd-playlist-renderer, ytd-channel-renderer, ytd-reel-item-renderer, yt-lockup-view-model';
 const root = document.documentElement;
 
 let active = false;
@@ -81,8 +82,16 @@ function visible(el) {
 function candidates() {
   const seen = new Set();
   const out = [];
+  const tiles = new Set();
   for (const el of document.querySelectorAll(NAV_SELECTOR)) {
     if (!visible(el) || el.closest('#xb-hints')) continue;
+    // A video tile is one stop: its first link. The channel name, the three-dot menu and the other buttons inside it
+    // are skipped, so the D-pad moves from video to video.
+    const tile = el.closest(TILE);
+    if (tile) {
+      if (tiles.has(tile) || el.tagName !== 'A') continue;
+      tiles.add(tile);
+    }
     // A video tile has several links to the same page (thumbnail, title); keep only the first.
     const href = el.tagName === 'A' ? el.href : '';
     if (href && /\/(watch|shorts|playlist)|\/@|\/channel\//.test(href)) {
@@ -125,7 +134,9 @@ function goTo(el) {
   navMouse = lastMouse;
   el.focus({ preventScroll: true });
   mark(el);
-  el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+  // Scroll at once: a smooth scroll leaves the next D-pad press measuring tiles that are still moving, which skips videos.
+  const r = el.getBoundingClientRect();
+  if (r.top < window.innerHeight * 0.15 || r.bottom > window.innerHeight * 0.85) el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
 }
 
 function goBack() {

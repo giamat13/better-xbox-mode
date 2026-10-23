@@ -280,6 +280,7 @@ app.whenReady().then(async () => {
   startBridge({
     getState: () => ({ running: true, version: app.getVersion(), pad: padConnected }),
     onKeyboard: (action) => (action === 'show' ? showKeyboard() : hideKeyboard()),
+    onTab: (game) => post({ cmd: 'tab_game', game }),
   });
 });
 

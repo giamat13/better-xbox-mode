@@ -46,6 +46,7 @@ class Engine:
         self.mouse = MouseMode()
         self.cfg = appmod.load_config()
         self.ui_hwnd = 0
+        self.tab_game = False  # the browser extension says the front tab is on a site marked as a game
         self.kb_visible = False
         self.taskbar_hidden = False
         self.inbox = queue.Queue()
@@ -91,6 +92,8 @@ class Engine:
         data = None
         if cmd == "ui":
             self.ui_hwnd = msg["hwnd"]
+        elif cmd == "tab_game":
+            self.tab_game = bool(msg["game"])
         elif cmd == "kb":
             self.kb_visible = bool(msg["visible"])
         elif cmd == "apply_taskbar":
@@ -210,7 +213,9 @@ class Engine:
         if exe in {a.lower() for a in self.cfg["game_apps"]}:
             return True
         if exe in BROWSER_EXES:
-            return False  # browsers load xinput only to serve the web Gamepad API, which does not mean the page needs the mouse gone
+            # Browsers load xinput only to serve the web Gamepad API, which says nothing about the page; the extension
+            # reports whether the front tab is on a site the user marked as a game.
+            return self.tab_game
         return self.reads_controller(hwnd, now)
 
     def reads_controller(self, hwnd, now):

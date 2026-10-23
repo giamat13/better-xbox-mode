@@ -1,10 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Xbox Mode Companion",
-  "version": "0.2.0",
-  "description": "A controller-first YouTube interface, shown only while Xbox Mode is running.",
+  "version": "0.3.0",
+  "description": "A controller-first YouTube interface, and a per-site game mode, active only while Xbox Mode is running.",
   "background": { "service_worker": "background.js" },
+  "permissions": ["tabs", "storage"],
   "host_permissions": ["http://127.0.0.1:47821/*"],
+  "action": { "default_title": "Xbox Mode: סמן או בטל מצב משחק לאתר הזה" },
+  "commands": {
+    "toggle-game-site": {
+      "suggested_key": { "default": "Alt+Shift+G" },
+      "description": "Xbox Mode: סמן או בטל מצב משחק לאתר הזה"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/*"],

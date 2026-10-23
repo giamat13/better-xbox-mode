@@ -7,7 +7,7 @@ const http = require('http');
 const PORT = 47821;
 const HOST = '127.0.0.1';
 
-function startBridge({ getState, onKeyboard }) {
+function startBridge({ getState, onKeyboard, onTab = () => {} }) {
   const server = http.createServer((req, res) => {
     const origin = req.headers.origin || '';
     // A page cannot add a custom header without a preflight, which is refused below, so the header proves an extension
@@ -34,6 +34,17 @@ function startBridge({ getState, onKeyboard }) {
         let action = '';
         try { action = JSON.parse(body).action; } catch { /* ignore */ }
         if (action === 'show' || action === 'hide') onKeyboard(action);
+        res.writeHead(204, cors).end();
+      });
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/tab') {
+      let body = '';
+      req.on('data', (c) => { if (body.length < 1024) body += c; });
+      req.on('end', () => {
+        let game = false;
+        try { game = JSON.parse(body).game === true; } catch { /* ignore */ }
+        onTab(game);
         res.writeHead(204, cors).end();
       });
       return;
