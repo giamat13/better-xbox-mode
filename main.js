@@ -268,6 +268,9 @@ ipcMain.handle('kb', (_e, action) => {
 ipcMain.handle('quit', () => app.quit());
 
 // ---- lifecycle ---------------------------------------------------------------
+// A second copy would start a second engine, and every button press would then be sent twice.
+if (!app.requestSingleInstanceLock()) app.quit();
+
 app.whenReady().then(async () => {
   startEngine();
   // The chosen display is part of the engine's config; do not wait for an engine that failed to start.

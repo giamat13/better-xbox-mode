@@ -33,6 +33,7 @@ STORE_REFRESH_SECONDS = 600
 WINDOWLESS_AFTER = 2  # launches in a row that showed no window before an app is hidden
 D3D_EXCLUSIVE = 3  # QUNS_RUNNING_D3D_FULL_SCREEN
 AWARE_RECHECK_SECONDS = 2.0
+BROWSER_EXES = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe"}
 GAMEPAD_DLLS = {"xinput1_1.dll", "xinput1_2.dll", "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll", "dinput.dll",
                 "dinput8.dll", "sdl2.dll", "sdl3.dll", "gameinput.dll", "windows.gaming.input.dll", "xinputuap.dll",
                 "steam_api.dll", "steam_api64.dll"}
@@ -208,6 +209,8 @@ class Engine:
             return False
         if exe in {a.lower() for a in self.cfg["game_apps"]}:
             return True
+        if exe in BROWSER_EXES:
+            return False  # browsers load xinput only to serve the web Gamepad API, which does not mean the page needs the mouse gone
         return self.reads_controller(hwnd, now)
 
     def reads_controller(self, hwnd, now):
@@ -288,10 +291,14 @@ class Engine:
             misses[path] = misses.get(path, 0) + 1
         appmod.save_config(self.cfg)
 
+    def is_own_window(self, hwnd):
+        """True for any window of the UI process (switcher, banner, keyboard), so mouse-mode shortcuts never fire in it."""
+        return bool(hwnd) and winman.pid_of(hwnd) == winman.pid_of(self.ui_hwnd)
+
     # ---- gamepad -------------------------------------------------------
     def tick(self, now, dt):
         fg = winman.foreground()
-        in_ui = bool(self.ui_hwnd) and fg == self.ui_hwnd
+        in_ui = bool(self.ui_hwnd) and (fg == self.ui_hwnd or self.is_own_window(fg))
         self.pad.stick_nav = in_ui or self.kb_visible
         self.pad.update(now)
         pad = self.pad
