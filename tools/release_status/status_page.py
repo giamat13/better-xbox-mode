@@ -86,7 +86,7 @@ STEPS = [
     ("Read the version", "קורא את מספר הגרסה"),
     ("Install dependencies", "מתקין את החבילות"),
     ("Build the installer", "בונה את קובץ ההתקנה והגרסה הנייחת"),
-    ("Check the two files", "בודק שיש שני קבצים לשחרור"),
+    ("Check the release files", "בודק שכל קובצי השחרור קיימים"),
     ("upload-artifact", "מעלה את הקבצים"),
     ("download-artifact", "לוקח את הקבצים שנבנו"),
     ("Check that the release does not exist", "בודק שהגרסה עוד לא פורסמה"),

@@ -29,15 +29,20 @@ jobs:
         run: npm ci
       - name: Build the installer and the portable exe
         run: npm run dist
-      - name: Check the two files
+      - name: Check the release files
         shell: bash
         run: |
-          COUNT=$(ls dist/*.exe 2>/dev/null | wc -l)
-          if [ "$COUNT" -ne 2 ]; then echo "expected 2 files in dist, found $COUNT"; ls dist; exit 1; fi
+          # two programs (installer, portable), the installer's blockmap and latest.yml, which the automatic update reads
+          EXE=$(ls dist/*.exe 2>/dev/null | wc -l)
+          BLOCKMAP=$(ls dist/*.exe.blockmap 2>/dev/null | wc -l)
+          if [ "$EXE" -ne 2 ] || [ "$BLOCKMAP" -ne 1 ] || [ ! -f dist/latest.yml ]; then echo "unexpected files in dist"; ls dist; exit 1; fi
       - uses: actions/upload-artifact@v4
         with:
           name: release-files
-          path: dist/*.exe
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest.yml
           if-no-files-found: error
 
   publish:
@@ -68,4 +73,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v$VERSION" dist/*.exe --title "$VERSION" --notes-file "docs/release-notes-v$VERSION.md" --target "$GITHUB_SHA"
+          gh release create "v$VERSION" dist/*.exe dist/*.exe.blockmap dist/latest.yml --title "$VERSION" --notes-file "docs/release-notes-v$VERSION.md" --target "$GITHUB_SHA"

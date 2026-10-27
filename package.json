@@ -39,7 +39,11 @@
         ]
       }
     ],
-    "publish": null,
+    "publish": {
+      "provider": "github",
+      "owner": "giamat13",
+      "repo": "better-xbox-mode"
+    },
     "win": {
       "target": [
         "nsis",
@@ -57,5 +61,8 @@
     "portable": {
       "artifactName": "xbox-mode-${version}-portable.${ext}"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }

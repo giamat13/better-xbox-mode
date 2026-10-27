@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { canShowWindow } = require('./pe');
 const { startBridge } = require('./bridge');
+const { autoUpdater } = require('electron-updater');
 
 const args = process.argv.slice(2);
 const argValue = (name) => (args.find((a) => a.startsWith(`--${name}=`)) || '').split('=').slice(1).join('=');
@@ -274,6 +275,22 @@ ipcMain.handle('kb', (_e, action) => {
 });
 ipcMain.handle('quit', () => app.quit());
 
+// ---- updates -------------------------------------------------------------------
+// Only the installed copy updates itself: the installer leaves its uninstaller next to the program, the portable file does not,
+// and a development run is not a release. A new version is downloaded in the background and installed when the app next quits.
+function startAutoUpdates() {
+  if (!app.isPackaged || !fs.existsSync(path.join(path.dirname(process.execPath), `Uninstall ${app.getName()}.exe`))) return;
+  autoUpdater.on('update-downloaded', (info) => {
+    if (Notification.isSupported()) {
+      new Notification({ title: 'עדכון Xbox Mode', body: `גרסה ${info.version} הורדה. התוכנה תתעדכן בסגירה הבאה.` }).show();
+    }
+  });
+  autoUpdater.on('error', (e) => console.error('Update check failed:', e.message));
+  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  check();
+  setInterval(check, 6 * 60 * 60 * 1000);
+}
+
 // ---- lifecycle ---------------------------------------------------------------
 // A second copy would start a second engine, and every button press would then be sent twice. Starting Xbox Mode again
 // replaces the running copy (once; if that copy does not go away, this one just exits), so new code is always the code
@@ -300,6 +317,7 @@ if (gotLock) app.whenReady().then(async () => {
     onTab: (game) => post({ cmd: 'tab_game', game }),
     onQuit: () => app.quit(),
   });
+  startAutoUpdates();
 });
 
 app.on('before-quit', () => {

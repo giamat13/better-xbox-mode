@@ -1,6 +1,6 @@
 ## Releasing xbox-mode
 
-מאגר: `giamat13/better-xbox-mode`. ענף ברירת המחדל: `main`. מספר הגרסה נמצא ב-`package.json` (שדה `"version"`) והוא מקור האמת היחיד; `npm version` מעדכן גם את `package-lock.json`. פורמט התג: `vX.Y.Z`. תהליך השחרור: `.github/workflows/release.yml` (השם `release`). כל שחרור מפרסם שני קבצים: `xbox-mode-X.Y.Z-setup.exe` (מתקין) ו-`xbox-mode-X.Y.Z-portable.exe` (portable, בלי התקנה).
+מאגר: `giamat13/better-xbox-mode`. ענף ברירת המחדל: `main`. מספר הגרסה נמצא ב-`package.json` (שדה `"version"`) והוא מקור האמת היחיד; `npm version` מעדכן גם את `package-lock.json`. פורמט התג: `vX.Y.Z`. תהליך השחרור: `.github/workflows/release.yml` (השם `release`). כל שחרור מפרסם ארבעה קבצים: `xbox-mode-X.Y.Z-setup.exe` (מתקין), `xbox-mode-X.Y.Z-portable.exe` (portable, בלי התקנה), `xbox-mode-X.Y.Z-setup.exe.blockmap` ו-`latest.yml`. שני האחרונים הם מה שהעדכון האוטומטי של המתקין קורא.
 
 ## כללים
 
@@ -75,7 +75,7 @@ MAJOR.MINOR.PATCH (סמנטי). בכל שחרור מעלים מספר אחד ב�
 
    תשובה 204 = הופעל. לא דוחפים תג ידנית: התהליך יוצר אותו בעצמו.
 9. מעקב: `python tools/release_status/watch_release.py giamat13/better-xbox-mode release.yml` ברקע (מדפיס את המשימות, ויוצא עם 1 בכשל הראשון). בכשל: לקרוא את היומן של המשימה (`GET /repos/giamat13/better-xbox-mode/actions/jobs/<id>/logs`), לבטל את ההרצה (`POST /repos/giamat13/better-xbox-mode/actions/runs/<id>/cancel`), לתקן, לדחוף ולהפעיל שוב.
-10. אחרי הצלחה: לבדוק שבשחרור יש בדיוק שני קבצים: `xbox-mode-X.Y.Z-setup.exe` ו-`xbox-mode-X.Y.Z-portable.exe`.
+10. אחרי הצלחה: לבדוק שבשחרור יש בדיוק ארבעה קבצים: שני ה-exe, ה-`.exe.blockmap` וה-`latest.yml`. בלי `latest.yml` העדכון האוטומטי לא רואה את הגרסה החדשה, ולכן לא מסתפקים בבדיקה של שני ה-exe בלבד.
 11. Issues: בכל issue שתוקן בגרסה, לכתוב "נכלל בגרסה vX.Y.Z" ולסגור אותו. רק issues שמופיעים בהודעות ה-commit (`Fixes #N`) או שהמשתמש ציין.
 12. סיום הלוח: כל המשימות `done`, ושורת יומן אחרונה.
 
@@ -86,7 +86,14 @@ MAJOR.MINOR.PATCH (סמנטי). בכל שחרור מעלים מספר אחד ב�
 - ההתקנה מתקינה לתיקיית המשתמש (`%LOCALAPPDATA%\Programs\Xbox Mode`), בלי הרשאות מנהל.
 - ההתקנה מוסיפה את התוכנה להפעלה עם Windows (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, הערך `Xbox Mode`). הסרת ההתקנה מוחקת את הערך. הגרסה הנייחת לא נרשמת להפעלה אוטומטית.
 - הקבצים לא חתומים דיגיטלית: Windows SmartScreen עלול להציג אזהרה.
-- בנייה מקומית: `npm run dist` יוצר את שני הקבצים ב-`dist/`.
+- בנייה מקומית: `npm run dist` יוצר את ארבעת קובצי השחרור ב-`dist/`.
+
+## עדכון אוטומטי
+
+- התוכנה המותקנת בודקת כל 6 שעות אם יש שחרור חדש ב-GitHub (דרך `latest.yml`). גרסה חדשה מורדת ברקע, ומותקנת כשהתוכנה נסגרת. המשתמש מקבל התראה על כך.
+- רק ההתקנה מתעדכנת לבד. הקוד בודק שמסיר ההתקנה `Uninstall Xbox Mode.exe` נמצא לצד הקובץ. הגרסה הנייחת לא מתעדכנת: מורידים אותה ידנית.
+- בפיתוח (`npm start`) אין עדכון אוטומטי.
+- **בדיקה אחרי שחרור שני:** מתקינים את הגרסה הקודמת, מפרסמים גרסה חדשה, ובודקים שההתקנה מורידה אותה ומתעדכנת בסגירה הבאה. השחרור הראשון (1.0.0) לא ניתן לבדוק כך, כי אין לפניו גרסה מותקנת עם עדכון.
 
 ## בעיות נפוצות
 
