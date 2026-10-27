@@ -1,0 +1,25 @@
+name: tests
+# Runs on every push to main that changes more than docs, and is reused by the release workflow (workflow_call).
+# The engine calls ctypes.windll when it is imported, so the tests run on Windows.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: npm ci
+      - name: Run the tests
+        run: npm test

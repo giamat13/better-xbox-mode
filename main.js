@@ -39,7 +39,8 @@ function call(cmd, extra = {}) {
 function startEngine() {
   const python = process.env.XBOX_PYTHON || 'python';
   engine = spawn(python, ['-u', '-m', 'xbox_mode'], {
-    cwd: __dirname,
+    // The installed app keeps the engine in resources/xbox_mode (see "extraResources" in package.json); in development it is next to this file.
+    cwd: app.isPackaged ? process.resourcesPath : __dirname,
     env: { ...process.env, PYTHONUTF8: '1' },
     stdio: ['pipe', 'pipe', 'inherit'],
     windowsHide: true,

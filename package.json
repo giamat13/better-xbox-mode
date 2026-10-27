@@ -1,16 +1,61 @@
 {
   "name": "xbox-mode",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "productName": "Xbox Mode",
   "description": "Console-style full screen shell for Windows, controlled with a gamepad. UI in Electron, system layer in Python.",
   "main": "main.js",
   "scripts": {
     "start": "node scripts/start.js",
     "windowed": "node scripts/start.js --windowed",
-    "test": "python -m unittest discover -s tests -v && node --test tests/pe.test.js"
+    "test": "python -m unittest discover -s tests -v && node --test tests/pe.test.js",
+    "dist": "electron-builder --win --publish never"
   },
   "author": "Giamat13",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^45.0.0"
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "io.github.giamat13.xbox-mode",
+    "productName": "Xbox Mode",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "bridge.js",
+      "pe.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "xbox_mode",
+        "to": "xbox_mode",
+        "filter": [
+          "**/*.py"
+        ]
+      }
+    ],
+    "publish": null,
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "xbox-mode-${version}-setup.${ext}",
+      "include": "build/installer.nsh"
+    },
+    "portable": {
+      "artifactName": "xbox-mode-${version}-portable.${ext}"
+    }
   }
 }
